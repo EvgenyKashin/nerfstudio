@@ -114,6 +114,8 @@ class NerfactoModelConfig(ModelConfig):
     """Whether use single jitter or not for the proposal networks."""
     predict_normals: bool = False
     """Whether to predict normals or not."""
+    use_appearance: bool = True
+    """Whether append appearance embedding for every image"""
 
 
 class NerfactoModel(Model):
@@ -141,6 +143,7 @@ class NerfactoModel(Model):
             num_images=self.num_train_data,
             use_pred_normals=self.config.predict_normals,
             use_average_appearance_embedding=self.config.use_average_appearance_embedding,
+            use_appearance=self.config.use_appearance,
         )
 
         self.density_fns = []

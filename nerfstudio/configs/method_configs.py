@@ -96,6 +96,45 @@ method_configs["nerfacto"] = ExperimentConfig(
     vis="viewer",
 )
 
+method_configs["nerfacto_cust"] = ExperimentConfig(
+    method_name="nerfacto_cust",
+    trainer=TrainerConfig(
+        steps_per_eval_batch=1000, steps_per_save=4000, max_num_iterations=16000, mixed_precision=True
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=NerfstudioDataParserConfig(),
+            # train_num_rays_per_batch=8192,
+            train_num_rays_per_batch=4096,
+            # eval_num_rays_per_batch=2048,
+            eval_num_rays_per_batch=4096,
+            camera_optimizer=CameraOptimizerConfig(mode="off"),
+            # camera_optimizer=CameraOptimizerConfig(
+            #     mode="SO3xR3", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            # ),
+        ),
+        model=NerfactoModelConfig(
+            eval_num_rays_per_chunk=1 << 15,
+            use_appearance=True,
+            # use_appearance=False,
+            background_color="random",
+            # background_color="last_sample",
+        ),
+    ),
+    optimizers={
+        "proposal_networks": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": None,
+        },
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": None,
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
 method_configs["instant-ngp"] = ExperimentConfig(
     method_name="instant-ngp",
     trainer=TrainerConfig(
