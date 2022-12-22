@@ -65,6 +65,8 @@ def _render_trajectory_video(
     """
     CONSOLE.print("[bold green]Creating trajectory " + output_format)
     cameras.rescale_output_resolution(rendered_resolution_scaling_factor)
+    # To fix case with: --downscale-factor > 1
+    render_width, render_height = cameras.width[0].item(), cameras.height[0].item()
     cameras = cameras.to(pipeline.device)
 
     progress = Progress(
