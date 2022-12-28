@@ -68,6 +68,7 @@ def _render_trajectory_video(
     # To fix case with: --downscale-factor > 1
     render_width, render_height = cameras.width[0].item(), cameras.height[0].item()
     cameras = cameras.to(pipeline.device)
+    fps = len(cameras) / seconds
 
     progress = Progress(
         TextColumn(":movie_camera: Rendering :movie_camera:"),
@@ -80,7 +81,6 @@ def _render_trajectory_video(
         output_image_dir = output_filename.parent / output_filename.stem
         output_image_dir.mkdir(parents=True, exist_ok=True)
     if output_format == "video":
-        fps = len(cameras) / seconds
         # make the folder if it doesn't exist
         output_filename.parent.mkdir(parents=True, exist_ok=True)
         # NOTE:
@@ -94,7 +94,12 @@ def _render_trajectory_video(
         writer = (
             stack.enter_context(
                 media.VideoWriter(
-                    path=output_filename, shape=(render_height, render_width * len(rendered_output_names)), fps=fps
+                    path=output_filename,
+                    shape=(
+                        int(render_height * rendered_resolution_scaling_factor),
+                        int(render_width * rendered_resolution_scaling_factor) * len(rendered_output_names),
+                    ),
+                    fps=fps,
                 )
             )
             if output_format == "video"
@@ -121,7 +126,7 @@ def _render_trajectory_video(
                 render_image = np.concatenate(render_image, axis=1)
                 if output_format == "images":
                     media.write_image(output_image_dir / f"{camera_idx:05d}.png", render_image)
-                if output_format == "video":
+                if output_format == "video" and writer is not None:
                     writer.add_image(render_image)
 
     if output_format == "video":
