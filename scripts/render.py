@@ -96,8 +96,8 @@ def _render_trajectory_video(
                 media.VideoWriter(
                     path=output_filename,
                     shape=(
-                        int(render_height * rendered_resolution_scaling_factor),
-                        int(render_width * rendered_resolution_scaling_factor) * len(rendered_output_names),
+                        int(render_height),
+                        int(render_width) * len(rendered_output_names),
                     ),
                     fps=fps,
                 )

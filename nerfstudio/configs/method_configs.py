@@ -24,7 +24,7 @@ import tyro
 from nerfacc import ContractionType
 
 from nerfstudio.cameras.camera_optimizers import CameraOptimizerConfig
-from nerfstudio.configs.base_config import ViewerConfig
+from nerfstudio.configs.base_config import ViewerConfig, MachineConfig
 from nerfstudio.data.datamanagers.base_datamanager import VanillaDataManagerConfig
 from nerfstudio.data.datamanagers.semantic_datamanager import SemanticDataManagerConfig
 from nerfstudio.data.datamanagers.variable_res_datamanager import (
@@ -40,6 +40,7 @@ from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataPars
 from nerfstudio.data.dataparsers.phototourism_dataparser import (
     PhototourismDataParserConfig,
 )
+from nerfstudio.data.dataparsers.omni_dataparser import OmniDataParserConfig
 from nerfstudio.engine.optimizers import AdamOptimizerConfig, RAdamOptimizerConfig
 from nerfstudio.engine.schedulers import SchedulerConfig
 from nerfstudio.engine.trainer import TrainerConfig
@@ -99,15 +100,16 @@ method_configs["nerfacto"] = TrainerConfig(
 
 method_configs["nerfacto_cust"] = TrainerConfig(
     method_name="nerfacto_cust",
-    steps_per_eval_batch=1000,
+    steps_per_eval_image=1000,
     steps_per_save=4000,
-    max_num_iterations=16000,
-    mixed_precision=True,
+    max_num_iterations=8000,  # 16000
+    mixed_precision=True,  # False
+    machine=MachineConfig(num_gpus=1),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
             dataparser=NerfstudioDataParserConfig(),
             train_num_rays_per_batch=4096,
-            eval_num_rays_per_batch=4096,
+            eval_num_rays_per_batch=1024,  # 4096
             camera_optimizer=CameraOptimizerConfig(mode="off"),
             # camera_optimizer=CameraOptimizerConfig(
             #     mode="SO3xR3", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
@@ -115,8 +117,8 @@ method_configs["nerfacto_cust"] = TrainerConfig(
         ),
         model=NerfactoModelConfig(
             eval_num_rays_per_chunk=1 << 15,
-            use_appearance=True,
-            # use_appearance=False,
+            use_appearance=False,
+            # use_appearance=True,
             background_color="random",
             # background_color="last_sample",
         ),
@@ -309,6 +311,45 @@ method_configs["phototourism"] = TrainerConfig(
             ),
         ),
         model=NerfactoModelConfig(eval_num_rays_per_chunk=1 << 15),
+    ),
+    optimizers={
+        "proposal_networks": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": None,
+        },
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": None,
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
+method_configs["omni_nerfacto"] = TrainerConfig(
+    method_name="omni_nerfacto",
+    steps_per_eval_image=1000,
+    steps_per_save=4000,
+    max_num_iterations=16000,  # 16000
+    mixed_precision=True,  # False
+    machine=MachineConfig(num_gpus=1),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=OmniDataParserConfig(),
+            train_num_rays_per_batch=4096,
+            eval_num_rays_per_batch=1024,  # 4096
+            camera_optimizer=CameraOptimizerConfig(mode="off"),
+            # camera_optimizer=CameraOptimizerConfig(
+            #     mode="SO3xR3", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            # ),
+        ),
+        model=NerfactoModelConfig(
+            eval_num_rays_per_chunk=1 << 15,
+            use_appearance=False,  # True
+            # use_appearance=False,
+            # background_color="random",
+            background_color="last_sample",
+        ),
     ),
     optimizers={
         "proposal_networks": {
