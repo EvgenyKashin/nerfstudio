@@ -42,6 +42,7 @@ class OmniDataParserConfig(DataParserConfig):
     """target class to instantiate"""
     data: Path = Path("path/to/data")
     scene_scale: float = 1.0
+    cameras_scale: float = 5.0
     downscale_factor: int = 1
 
 
@@ -60,14 +61,12 @@ class OmniDataParser(DataParser):
                     cam_origins.append(np.array(p.split()).astype(float))
             return np.array(cam_origins)
 
-        def _construct_cameras(origins):
+        def _construct_cameras(origins, scale):
             cameras = []
             for i in range(len(origins)):
                 orig = origins[i]
-                orig = np.array([orig[0], orig[2], orig[1]])
+                orig = np.array([orig[2], orig[0], orig[1]]) * scale
                 c2w = np.eye(4)[:3, :]
-                # c2w[2, 2] *= -1
-                # c2w[:3, :3] = np.rot90(c2w[:3, :3], axes=[0, 2])
                 r = R.from_euler('x', 90, degrees=True)
                 c2w[:3, :3] = r.as_matrix()
 
@@ -83,15 +82,20 @@ class OmniDataParser(DataParser):
             cam_path = self.config.data / "cam_pos.txt"
         else:
             cam_path = self.config.data / "test_cam_pos.txt"
+        # cam_path = self.config.data / "cam_pos.txt"
 
         cam_origins = _read_cam_origins(cam_path)
-        camera_to_worlds = _construct_cameras(cam_origins)
+        camera_to_worlds = _construct_cameras(
+            cam_origins,
+            self.config.cameras_scale
+        )
 
         image_filenames = []
         mask_filenames = []
         depth_filenames = []
         for i in range(len(cam_origins)):
             img_dir = "aug_images" if split == "train" else "test_images"
+            # img_dir = "aug_images"
             image_filenames.append(self.config.data / img_dir / f"rgb_{i}.png")
 
             mask_dir = "aug_occlusion" if split == "train" else "test_occlusion"
@@ -100,6 +104,7 @@ class OmniDataParser(DataParser):
             depth_dir = "aug_depth" if split == "train" else "test_depth"
             depth_filenames.append(self.config.data / depth_dir / f"d_{i}.png")
         # mask_filenames = None
+        # depth_filenames = None
 
         # TODO: create depth dataset class for that
         # UPD: they already created it

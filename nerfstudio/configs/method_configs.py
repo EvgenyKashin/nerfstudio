@@ -117,7 +117,7 @@ method_configs["nerfacto_cust"] = TrainerConfig(
         ),
         model=NerfactoModelConfig(
             eval_num_rays_per_chunk=1 << 15,
-            use_appearance=False,
+            use_appearance=True,
             # use_appearance=True,
             background_color="random",
             # background_color="last_sample",
