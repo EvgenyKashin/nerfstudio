@@ -58,7 +58,7 @@ class SpacedSampler(Sampler):
         num_samples: Number of samples per ray
         spacing_fn: Function that dictates sample spacing (ie `lambda x : x` is uniform).
         spacing_fn_inv: The inverse of spacing_fn.
-        train_stratified: Use stratified sampling during training. Defults to True
+        train_stratified: Use stratified sampling during training. Defaults to True
         single_jitter: Use a same random jitter for all samples along a ray. Defaults to False
     """
 
@@ -81,7 +81,7 @@ class SpacedSampler(Sampler):
         ray_bundle: Optional[RayBundle] = None,
         num_samples: Optional[int] = None,
     ) -> RaySamples:
-        """Generates position samples accoring to spacing function.
+        """Generates position samples according to spacing function.
 
         Args:
             ray_bundle: Rays to generate samples for
@@ -131,7 +131,7 @@ class UniformSampler(SpacedSampler):
 
     Args:
         num_samples: Number of samples per ray
-        train_stratified: Use stratified sampling during training. Defults to True
+        train_stratified: Use stratified sampling during training. Defaults to True
         single_jitter: Use a same random jitter for all samples along a ray. Defaults to False
     """
 
@@ -155,7 +155,7 @@ class LinearDisparitySampler(SpacedSampler):
 
     Args:
         num_samples: Number of samples per ray
-        train_stratified: Use stratified sampling during training. Defults to True
+        train_stratified: Use stratified sampling during training. Defaults to True
         single_jitter: Use a same random jitter for all samples along a ray. Defaults to False
     """
 
@@ -179,7 +179,7 @@ class SqrtSampler(SpacedSampler):
 
     Args:
         num_samples: Number of samples per ray
-        train_stratified: Use stratified sampling during training. Defults to True
+        train_stratified: Use stratified sampling during training. Defaults to True
     """
 
     def __init__(
@@ -202,7 +202,7 @@ class LogSampler(SpacedSampler):
 
     Args:
         num_samples: Number of samples per ray
-        train_stratified: Use stratified sampling during training. Defults to True
+        train_stratified: Use stratified sampling during training. Defaults to True
     """
 
     def __init__(
@@ -227,7 +227,7 @@ class UniformLinDispPiecewiseSampler(SpacedSampler):
 
     Args:
         num_samples: Number of samples per ray
-        train_stratified: Use stratified sampling during training. Defults to True
+        train_stratified: Use stratified sampling during training. Defaults to True
         single_jitter: Use a same random jitter for all samples along a ray. Defaults to False
     """
 
@@ -431,7 +431,7 @@ class VolumetricSampler(Sampler):
         near_plane: float = 0.0,
         far_plane: Optional[float] = None,
         cone_angle: float = 0.0,
-    ) -> Tuple[RaySamples, TensorType["total_samples", 3], TensorType["total_samples", 2]]:
+    ) -> Tuple[RaySamples, TensorType["total_samples",]]:
         """Generate ray samples in a bounding box.
 
         Args:
@@ -444,7 +444,6 @@ class VolumetricSampler(Sampler):
         Returns:
             a tuple of (ray_samples, packed_info, ray_indices)
             The ray_samples are packed, only storing the valid samples.
-            The packed_info contains all the information to recover packed samples into unpacked mode for rendering.
             The ray_indices contains the indices of the rays that each sample belongs to.
         """
 
@@ -455,7 +454,7 @@ class VolumetricSampler(Sampler):
         else:
             camera_indices = None
 
-        packed_info, starts, ends = nerfacc.ray_marching(
+        ray_indices, starts, ends = nerfacc.ray_marching(
             rays_o=rays_o,
             rays_d=rays_d,
             scene_aabb=self.scene_aabb,
@@ -473,11 +472,10 @@ class VolumetricSampler(Sampler):
         if num_samples == 0:
             # create a single fake sample and update packed_info accordingly
             # this says the last ray in packed_info has 1 sample, which starts and ends at 1
-            packed_info[-1, 1] = 1
+            ray_indices = torch.zeros((1,), dtype=torch.long, device=rays_o.device)
             starts = torch.ones((1, 1), dtype=starts.dtype, device=rays_o.device)
             ends = torch.ones((1, 1), dtype=ends.dtype, device=rays_o.device)
 
-        ray_indices = nerfacc.unpack_info(packed_info)
         origins = rays_o[ray_indices]
         dirs = rays_d[ray_indices]
         if camera_indices is not None:
@@ -494,7 +492,7 @@ class VolumetricSampler(Sampler):
             ),
             camera_indices=camera_indices,
         )
-        return ray_samples, packed_info, ray_indices
+        return ray_samples, ray_indices
 
 
 class ProposalNetworkSampler(Sampler):
