@@ -31,6 +31,7 @@ from nerfstudio.data.datamanagers.semantic_datamanager import SemanticDataManage
 from nerfstudio.data.datamanagers.variable_res_datamanager import (
     VariableResDataManagerConfig,
 )
+from nerfstudio.data.datamanagers.dual_datamanager import DualDataManagerConfig
 from nerfstudio.data.dataparsers.blender_dataparser import BlenderDataParserConfig
 from nerfstudio.data.dataparsers.dnerf_dataparser import DNeRFDataParserConfig
 from nerfstudio.data.dataparsers.friends_dataparser import FriendsDataParserConfig
@@ -55,6 +56,7 @@ from nerfstudio.models.tensorf import TensoRFModelConfig
 from nerfstudio.models.vanilla_nerf import NeRFModel, VanillaModelConfig
 from nerfstudio.pipelines.base_pipeline import VanillaPipelineConfig
 from nerfstudio.pipelines.dynamic_batch import DynamicBatchPipelineConfig
+from nerfstudio.pipelines.dynamic_dual_batch import DynamicDualBatchPipelineConfig
 
 method_configs: Dict[str, TrainerConfig] = {}
 descriptions = {
@@ -69,6 +71,33 @@ descriptions = {
     "dnerf": "Dynamic-NeRF model. (slow)",
     "phototourism": "Uses the Phototourism data.",
 }
+
+method_configs["instant-ngp-dual"] = TrainerConfig(
+    method_name="instant-ngp-dual",
+    steps_per_eval_batch=500,
+    steps_per_save=2000,
+    max_num_iterations=30000,
+    mixed_precision=True,
+    pipeline=DynamicDualBatchPipelineConfig(
+        datamanager=DualDataManagerConfig(dataparser=InstantNGPDataParserConfig(), train_num_rays_per_batch=8192),
+        model=InstantNGPModelConfig(
+            eval_num_rays_per_chunk=8192,
+            contraction_type=ContractionType.AABB,
+            render_step_size=0.001,
+            max_num_samples_per_ray=48,
+            near_plane=0.01,
+            background_color="random",  # black
+        ),
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": None,
+        }
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=64000),
+    vis="viewer",
+)
 
 method_configs["nerfacto"] = TrainerConfig(
     method_name="nerfacto",
@@ -218,7 +247,6 @@ method_configs["instant-ngp-bounded"] = TrainerConfig(
     viewer=ViewerConfig(num_rays_per_chunk=64000),
     vis="viewer",
 )
-
 
 method_configs["mipnerf"] = TrainerConfig(
     method_name="mipnerf",
