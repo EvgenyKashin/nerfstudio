@@ -46,7 +46,7 @@ class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=a
     def setup_train(self):
         """Sets up the data loaders for training"""
         super().setup_train()
-        images_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/2001/images"
+        images_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/2001/images_2"
         mask_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/2001/mask"
         # Same camera_to_worlds, but different images
         self.train_dual_dataset = DualEquirectangularDataset(
@@ -67,6 +67,7 @@ class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=a
         )
         self.iter_train_dual_image_dataloader = iter(self.train_dual_image_dataloader)
         self.train_dual_pixel_sampler = self._get_pixel_sampler(self.train_dual_dataset, self.config.train_num_rays_per_batch)
+        self._set_train_num_rays_fraction_for_pixel_samplers(self.config.train_num_rays_per_batch)
         self.train_dual_camera_optimizer = self.config.camera_optimizer.setup(
             num_cameras=self.train_dataset.cameras.size, device=self.device
         )
@@ -142,3 +143,15 @@ class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=a
             times,
         )
         return concatenated_rays
+
+    def _set_train_num_rays_fraction_for_pixel_samplers(
+        self,
+        num_rays_per_batch: int,
+        dual_fraction: float = 0.25
+    ):
+        assert 0 < dual_fraction <= 1
+        if self.train_pixel_sampler is not None:
+            train_num_rays = int((1 - dual_fraction) * num_rays_per_batch)
+            dual_train_num_rays = int(dual_fraction * num_rays_per_batch)
+            self.train_pixel_sampler.set_num_rays_per_batch(train_num_rays)
+            self.train_dual_pixel_sampler.set_num_rays_per_batch(dual_train_num_rays)

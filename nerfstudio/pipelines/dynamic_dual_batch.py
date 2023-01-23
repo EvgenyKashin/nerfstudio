@@ -62,12 +62,9 @@ class DynamicDualBatchPipeline(DynamicBatchPipeline):
 
     def _update_pixel_samplers(self):
         """Update the pixel samplers for train and eval with the dynamic number of rays per batch."""
-        if self.datamanager.train_pixel_sampler is not None:
-            assert 0 < self.config.dual_num_rays_fraction <= 1
-            train_num_rays = int((1 - self.config.dual_num_rays_fraction) * self.dynamic_num_rays_per_batch)
-            dual_train_num_rays = int(self.config.dual_num_rays_fraction * self.dynamic_num_rays_per_batch)
-            self.datamanager.train_pixel_sampler.set_num_rays_per_batch(train_num_rays)
-        # if self.datamanager.train_dual_pixel_sampler is not None:
-            self.datamanager.train_dual_pixel_sampler.set_num_rays_per_batch(dual_train_num_rays)
+        self.datamanager._set_train_num_rays_fraction_for_pixel_samplers(
+            self.dynamic_num_rays_per_batch,
+            self.config.dual_num_rays_fraction
+        )
         if self.datamanager.eval_pixel_sampler is not None:
             self.datamanager.eval_pixel_sampler.set_num_rays_per_batch(self.dynamic_num_rays_per_batch)

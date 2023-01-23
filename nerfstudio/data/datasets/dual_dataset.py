@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Depth dataset.
+Dual dataset.
 """
 
 from typing import Dict
