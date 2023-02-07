@@ -201,12 +201,45 @@ class NGPModel(Model):
         accumulation = self.renderer_accumulation(weights=weights, ray_indices=ray_indices, num_rays=num_rays)
         alive_ray_mask = accumulation.squeeze(-1) > 0
 
+        eps = 1e-10
+        sigmas = field_outputs[FieldHeadNames.DENSITY]
+        t_dists = ray_samples.frustums.ends - ray_samples.frustums.starts
+
+        alphas = 1.0 - torch.exp(-sigmas * t_dists)
+
+        alphas_sum = nerfacc.accumulate_along_rays(torch.ones_like(alphas), ray_indices, alphas, num_rays)
+        alphas_sum += eps
+        alphas_sum = torch.gather(alphas_sum[:, 0], 0, ray_indices).unsqueeze(1)
+        rays_prob = alphas / alphas_sum
+
+        rays_entropy = -1 * rays_prob * torch.log2(rays_prob + eps)
+        rays_entropy_mean = torch.zeros((num_rays,), device=rays_entropy.device, dtype=rays_entropy.dtype)
+        rays_entropy_mean.scatter_add_(0, ray_indices, rays_entropy[:, 0])
+
+        # rays_entropy_mean = rays_entropy_mean / packed_info[:, 1]  # packed_info[:, 1] is elements count in a group
+        rays_entropy_mean = rays_entropy_mean / 10.0
+        rays_entropy_mean[packed_info[:, 1] == 0] = 0.0
+
+        # it's would be needed for the loss
+        # acc_threshold = 0.6
+        # acc_mask = accumulation.squeeze(-1) > acc_threshold
+        # rays_entropy_mean[~acc_mask] = 0.0
+
+        depth /= 4
+        depth = torch.clip(depth, 0, 1)
+
+        # rays_entropy_mean /= 0.4
+        rays_entropy_mean = torch.clip(rays_entropy_mean, 0, 1)
+
+        num_samples_per_ray = packed_info[:, 1].to(torch.float32) / 300.0
+
         outputs = {
             "rgb": rgb,
             "accumulation": accumulation,
             "depth": depth,
             "alive_ray_mask": alive_ray_mask,  # the rays we kept from sampler
-            "num_samples_per_ray": packed_info[:, 1],
+            "num_samples_per_ray": num_samples_per_ray,  # packed_info[:, 1],
+            "entropy": rays_entropy_mean,
         }
         return outputs
 
