@@ -46,13 +46,16 @@ class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=a
     def setup_train(self):
         """Sets up the data loaders for training"""
         super().setup_train()
-        images_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/2001/images_2"
-        mask_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/2001/mask"
+        # pano_results/images_hybrid_str032
+        # 2401/images_hybrid_str0_skipempty
+        images_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/images_hybrid_str032_52"
+        mask_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/2401/mask"  # mask_unobserved mask
         # Same camera_to_worlds, but different images
         self.train_dual_dataset = DualEquirectangularDataset(
             img_path=images_path,
             mask_path=mask_path,
             another_dataparser_outputs=self.train_dataparser_outputs,
+            # scale_factor=0.1,
             scale_factor=1.0,
         )
         CONSOLE.print("Setting up training dual dataset...")
