@@ -193,7 +193,7 @@ def orientation_loss(
     """
     w = weights
     n = normals
-    v = viewdirs
+    v = viewdirs * -1
     n_dot_v = (n * v[..., None, :]).sum(axis=-1)
     return (w[..., 0] * torch.fmin(torch.zeros_like(n_dot_v), n_dot_v) ** 2).sum(dim=-1)
 
@@ -291,7 +291,7 @@ def depth_loss(
         Depth loss scalar.
     """
     if not is_euclidean:
-        termination_depth = termination_depth / directions_norm
+        termination_depth = termination_depth * directions_norm
     steps = (ray_samples.frustums.starts + ray_samples.frustums.ends) / 2
 
     if depth_loss_type == DephtLossType.DS_NERF:
