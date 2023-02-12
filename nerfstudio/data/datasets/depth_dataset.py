@@ -33,10 +33,11 @@ class DepthDataset(InputDataset):
 
     def __init__(self, dataparser_outputs: DataparserOutputs, scale_factor: float = 1.0):
         super().__init__(dataparser_outputs, scale_factor)
-        assert (
-            "depth_filenames" in dataparser_outputs.metadata.keys()
-            and dataparser_outputs.metadata["depth_filenames"] is not None
-        )
+        if len(dataparser_outputs.image_filenames) > 0:
+            assert (
+                "depth_filenames" in dataparser_outputs.metadata.keys()
+                and dataparser_outputs.metadata["depth_filenames"] is not None
+            )
         self.depth_filenames = self.metadata["depth_filenames"]
         self.depth_unit_scale_factor = self.metadata["depth_unit_scale_factor"]
 
@@ -50,5 +51,6 @@ class DepthDataset(InputDataset):
         depth_image = get_depth_image_from_path(
             filepath=filepath, height=height, width=width, scale_factor=scale_factor
         )
+        print(depth_image.shape, depth_image.min(), depth_image.max())
 
         return {"depth_image": depth_image}
