@@ -45,12 +45,19 @@ class DepthDataset(InputDataset):
         filepath = self.depth_filenames[data["image_idx"]]
         height = int(self._dataparser_outputs.cameras.height[data["image_idx"]])
         width = int(self._dataparser_outputs.cameras.width[data["image_idx"]])
-
         # Scale depth images to meter units and also by scaling applied to cameras
         scale_factor = self.depth_unit_scale_factor * self._dataparser_outputs.dataparser_scale
         depth_image = get_depth_image_from_path(
             filepath=filepath, height=height, width=width, scale_factor=scale_factor
         )
-        print(depth_image.shape, depth_image.min(), depth_image.max())
+        # print(depth_image.shape, depth_image.min(), depth_image.max())
+        c2w = self._dataparser_outputs.cameras.camera_to_worlds[data["image_idx"]]
+        z_dir = c2w[:3, 2]
+        depth_image_mask = depth_image > 0
+        depth_points = depth_image * z_dir
+        aabb = self._dataparser_outputs.scene_box.aabb
+        aabb_mask = (depth_points < aabb[0]) | (depth_points > aabb[1])
+        depth_image_mask = depth_image_mask & aabb_mask.any(dim=2)[..., None]
+        depth_image[depth_image_mask] *= -1.0
 
         return {"depth_image": depth_image}
