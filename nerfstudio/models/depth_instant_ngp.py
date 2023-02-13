@@ -119,10 +119,10 @@ class DepthNGPModel(NGPModel):
 
         # The reason for this method in the children class in these outputs.
         # These use a lot of GPU memory, so we avoid storing them for eval.
-        if self.training:
+        if self.training: # we could disable it for vis==viewer
             outputs["weights"] = weights
             outputs["ray_samples"] = ray_samples
-            outputs["directions_norm"] = ray_bundle.metadata["directions_norm"]
+        outputs["directions_norm"] = ray_bundle.metadata["directions_norm"]
 
         return outputs
 
@@ -169,7 +169,12 @@ class DepthNGPModel(NGPModel):
             near_plane=torch.min(ground_truth_depth),
             far_plane=torch.max(ground_truth_depth),
         )
-        images["depth"] = torch.cat([ground_truth_depth_colormap, predicted_depth_colormap], dim=1)
+        predicted_no_scale_depth_colormap = colormaps.apply_depth_colormap(outputs["depth"])
+        images["depth"] = torch.cat([
+            ground_truth_depth_colormap,
+            predicted_depth_colormap,
+            predicted_no_scale_depth_colormap
+        ], dim=1)
         depth_mask = ground_truth_depth > 0
         metrics["depth_mse"] = torch.nn.functional.mse_loss(
             outputs["depth"][depth_mask], ground_truth_depth[depth_mask]
