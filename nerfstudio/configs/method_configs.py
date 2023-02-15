@@ -301,7 +301,7 @@ method_configs["depth-instant-ngp-bounded"] = TrainerConfig(
     max_num_iterations=30000,
     mixed_precision=True,
     pipeline=DynamicBatchPipelineConfig(
-        target_num_samples=2**17,
+        target_num_samples=2**18,
         datamanager=DepthDataManagerConfig(dataparser=InstantNGPDataParserConfig(), train_num_rays_per_batch=8192),
         model=DepthInstantNGPModelConfig(
             eval_num_rays_per_chunk=8192,

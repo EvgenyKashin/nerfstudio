@@ -39,6 +39,7 @@ class DepthLossType(Enum):
 
     DS_NERF = 1
     URF = 2
+    L2 = 3
 
 
 def outer(
@@ -271,6 +272,29 @@ def urban_radiance_field_depth_loss(
     return torch.mean(loss)
 
 
+def l2_depth_loss(
+    termination_depth: TensorType[..., 1],
+    predicted_depth: TensorType[..., 1],
+) -> TensorType[..., 1]:
+    """The simples L2 loss between GT and predicted depth.
+
+    Args:
+        weights: Weights predicted for each sample.
+        termination_depth: Ground truth depth of rays.
+        predicted_depth: Depth prediction from the network.
+        steps: Sampling distances along rays.
+    Returns:
+        Depth loss scalar.
+    """
+    depth_mask = termination_depth > 0
+
+    # Expected depth loss
+    expected_depth_loss = (termination_depth - predicted_depth) ** 2
+
+    loss = expected_depth_loss * depth_mask
+    return torch.mean(loss)
+
+
 def depth_loss(
     weights: TensorType[..., "num_samples", 1],
     ray_samples: RaySamples,
@@ -306,5 +330,8 @@ def depth_loss(
 
     if depth_loss_type == DepthLossType.URF:
         return urban_radiance_field_depth_loss(weights, termination_depth, predicted_depth, steps, sigma)
+
+    if depth_loss_type == DepthLossType.L2:
+        return l2_depth_loss(termination_depth, predicted_depth)
 
     raise NotImplementedError("Provided depth loss type not implemented.")

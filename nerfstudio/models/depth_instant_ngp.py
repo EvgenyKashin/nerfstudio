@@ -119,7 +119,7 @@ class DepthNGPModel(NGPModel):
 
         # The reason for this method in the children class in these outputs.
         # These use a lot of GPU memory, so we avoid storing them for eval.
-        if self.training: # we could disable it for vis==viewer
+        if self.training:  # we could disable it for vis==viewer
             outputs["weights"] = weights
             outputs["ray_samples"] = ray_samples
         outputs["directions_norm"] = ray_bundle.metadata["directions_norm"]
