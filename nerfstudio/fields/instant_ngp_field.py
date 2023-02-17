@@ -79,12 +79,14 @@ class TCNNInstantNGPField(Field):
         contraction_type: ContractionType = ContractionType.UN_BOUNDED_SPHERE,
         num_levels: int = 16,
         log2_hashmap_size: int = 19,
+        use_direction: bool = True,
     ) -> None:
         super().__init__()
 
         self.aabb = Parameter(aabb, requires_grad=False)
         self.geo_feat_dim = geo_feat_dim
         self.contraction_type = contraction_type
+        self.use_direction = use_direction
 
         self.use_appearance_embedding = use_appearance_embedding
         if use_appearance_embedding:
@@ -95,13 +97,14 @@ class TCNNInstantNGPField(Field):
         # TODO: set this properly based on the aabb
         per_level_scale = 1.4472692012786865
 
-        self.direction_encoding = tcnn.Encoding(
-            n_input_dims=3,
-            encoding_config={
-                "otype": "SphericalHarmonics",
-                "degree": 4,
-            },
-        )
+        if self.use_direction:
+            self.direction_encoding = tcnn.Encoding(
+                n_input_dims=3,
+                encoding_config={
+                    "otype": "SphericalHarmonics",
+                    "degree": 4,
+                },
+            )
 
         self.mlp_base = tcnn.NetworkWithInputEncoding(
             n_input_dims=3,
@@ -123,7 +126,10 @@ class TCNNInstantNGPField(Field):
             },
         )
 
-        in_dim = self.direction_encoding.n_output_dims + self.geo_feat_dim
+        # in_dim = self.direction_encoding.n_output_dims + self.geo_feat_dim
+        in_dim = self.geo_feat_dim
+        if self.use_direction:
+            in_dim += self.direction_encoding.n_output_dims
         if self.use_appearance_embedding:
             in_dim += self.appearance_embedding_dim
         self.mlp_head = tcnn.Network(
@@ -156,12 +162,19 @@ class TCNNInstantNGPField(Field):
         directions = get_normalized_directions(ray_samples.frustums.directions)
         directions_flat = directions.view(-1, 3)
 
-        d = self.direction_encoding(directions_flat)
+        if self.use_direction:
+            d = self.direction_encoding(directions_flat)
         if density_embedding is None:
             positions = SceneBox.get_normalized_positions(ray_samples.frustums.get_positions(), self.aabb)
-            h = torch.cat([d, positions.view(-1, 3)], dim=-1)
+            if self.use_direction:
+                h = torch.cat([d, positions.view(-1, 3)], dim=-1)
+            else:
+                h = positions.view(-1, 3)
         else:
-            h = torch.cat([d, density_embedding.view(-1, self.geo_feat_dim)], dim=-1)
+            if self.use_direction:
+                h = torch.cat([d, density_embedding.view(-1, self.geo_feat_dim)], dim=-1)
+            else:
+                h = density_embedding.view(-1, self.geo_feat_dim)
 
         if self.use_appearance_embedding:
             if ray_samples.camera_indices is None:
