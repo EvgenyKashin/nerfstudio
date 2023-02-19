@@ -21,8 +21,11 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union
 from rich.progress import Console
 import torch
 
-from nerfstudio.data.datamanagers import base_datamanager
-from nerfstudio.data.datasets.dual_dataset import DualEquirectangularDataset
+from nerfstudio.data.datamanagers import base_datamanager, depth_datamanager
+from nerfstudio.data.datasets.dual_dataset import (
+    DualEquirectangularDataset,
+    DualDepthEquirectangularDataset,
+)
 from nerfstudio.data.utils.dataloaders import CacheDataloader
 from nerfstudio.model_components.ray_generators import RayGenerator
 from nerfstudio.cameras.rays import RayBundle
@@ -35,6 +38,15 @@ class DualDataManagerConfig(base_datamanager.VanillaDataManagerConfig):
     """A dual datamanager - required to use with .setup()"""
 
     _target: Type = field(default_factory=lambda: DualDataManager)
+    _dataset_cls: Type = DualEquirectangularDataset
+
+
+@dataclass
+class DualDepthDataManagerConfig(base_datamanager.VanillaDataManagerConfig):
+    """A dual depth datamanager - required to use with .setup()"""
+
+    _target: Type = field(default_factory=lambda: DualDepthDataManager)
+    _dataset_cls: Type = DualDepthEquirectangularDataset
 
 
 class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=abstract-method
@@ -46,14 +58,15 @@ class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=a
     def setup_train(self):
         """Sets up the data loaders for training"""
         super().setup_train()
-        # pano_results/images_hybrid_str032
-        # 2401/images_hybrid_str0_skipempty
-        images_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/images_hybrid_str032_52"
-        mask_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/2401/mask"  # mask_unobserved mask
+        images_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032/images_52"
+        mask_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032/mask_unobserved"  # mask_unobserved mask
+        depth_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032/depth_midas"
+
         # Same camera_to_worlds, but different images
-        self.train_dual_dataset = DualEquirectangularDataset(
+        self.train_dual_dataset = self.config._dataset_cls(
             img_path=images_path,
             mask_path=mask_path,
+            depth_path=depth_path,
             another_dataparser_outputs=self.train_dataparser_outputs,
             # scale_factor=0.1,
             scale_factor=1.0,
@@ -108,6 +121,13 @@ class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=a
             "image": torch.cat((batch["image"], dual_batch["image"])),
             "indices": torch.cat((batch["indices"], dual_batch["indices"])),
         }
+
+        if "depth_image" in batch and "depth_image" in dual_batch:
+            concatenated_batch["depth_image"] = torch.cat((
+                batch["depth_image"],
+                dual_batch["depth_image"]
+            ))
+
         return concatenated_ray_bundle, concatenated_batch
 
     def _concatenate_rays(self, rays_a: RayBundle, rays_b: RayBundle) -> RayBundle:
@@ -150,7 +170,7 @@ class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=a
     def _set_train_num_rays_fraction_for_pixel_samplers(
         self,
         num_rays_per_batch: int,
-        dual_fraction: float = 0.25
+        dual_fraction: float = 0.25,  # TODO: add to config
     ):
         assert 0 < dual_fraction <= 1
         if self.train_pixel_sampler is not None:
@@ -158,3 +178,14 @@ class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=a
             dual_train_num_rays = int(dual_fraction * num_rays_per_batch)
             self.train_pixel_sampler.set_num_rays_per_batch(train_num_rays)
             self.train_dual_pixel_sampler.set_num_rays_per_batch(dual_train_num_rays)
+
+
+class DualDepthDataManager(
+    DualDataManager,
+    depth_datamanager.DepthDataManager,
+):  # pylint: disable=abstract-method
+    """DualDataManager implementation, but with DepthDataset.
+    Args:
+        config: the DataManagerConfig used to instantiate class
+    """
+    pass

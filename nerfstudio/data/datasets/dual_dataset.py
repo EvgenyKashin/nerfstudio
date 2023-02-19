@@ -24,11 +24,14 @@ import torch
 
 from nerfstudio.data.dataparsers.base_dataparser import DataparserOutputs
 from nerfstudio.data.datasets.base_dataset import InputDataset
+from nerfstudio.data.datasets.depth_dataset import DepthDataset
+from nerfstudio.data.utils.data_utils import get_depth_image_from_path, mask_out_depth_outside_aabb
 from nerfstudio.cameras.cameras import Cameras, CameraType
 
 
 class DualEquirectangularDataset(InputDataset):
     """Dataset that takes another dataset and re-create an Equirectangular from it.
+    Depth_path here is just for a unified constructor.
 
     Args:
         dataparser_outputs: dataparser_outputs from the original dataparser.
@@ -40,17 +43,21 @@ class DualEquirectangularDataset(InputDataset):
         another_dataparser_outputs: DataparserOutputs,
         img_path: str,
         mask_path: str,
+        depth_path: str = None,
         img_suffix: str = ".png",
         mask_suffix: str = ".png",
-        scale_factor: float = 1.0
+        depth_suffix: str = ".npy",
+        scale_factor: float = 1.0,
     ):
         self._another_dataparser_outputs = another_dataparser_outputs
-        dataparser_outputs = self._replace_dataparser_outputs(
+        dataparser_outputs, _ = self._replace_dataparser_outputs(
             another_dataparser_outputs,
             img_path,
             mask_path,
+            None,
             img_suffix,
             mask_suffix,
+            None,
         )
 
         super().__init__(dataparser_outputs, scale_factor)
@@ -60,19 +67,26 @@ class DualEquirectangularDataset(InputDataset):
         another_dataparser_outputs,
         img_path,
         mask_path,
+        depth_path,
         img_suffix,
         mask_suffix,
+        depth_suffix,
     ):
         dataparser_outputs = deepcopy(another_dataparser_outputs)
 
         image_filenames = []
         mask_filenames = []
+        depth_filenames = []
         cameras_to_worlds = []
         for i, fname in enumerate(another_dataparser_outputs.image_filenames):
             img_fname = (Path(img_path) / fname.stem).with_suffix(img_suffix)
             mask_fname = (Path(mask_path) / fname.stem).with_suffix(mask_suffix)
             if not (img_fname.exists() and mask_fname.exists()):
                 continue
+
+            if depth_path is not None:
+                depth_fname = (Path(depth_path) / fname.stem).with_suffix(depth_suffix)
+                depth_filenames.append(depth_fname)
 
             image_filenames.append(img_fname)
             mask_filenames.append(mask_fname)
@@ -96,5 +110,48 @@ class DualEquirectangularDataset(InputDataset):
             camera_type=CameraType.EQUIRECTANGULAR,
         )
         dataparser_outputs.cameras = cameras
-        return dataparser_outputs
+        return dataparser_outputs, depth_filenames
 
+
+class DualDepthEquirectangularDataset(
+    DualEquirectangularDataset,
+    DepthDataset,
+):
+    """Dataset that takes another dataset and re-create an Equirectangular from it.
+    It also supports optional depth metadata.
+
+    Args:
+        dataparser_outputs: dataparser_outputs from the original dataparser.
+        scale_factor: The scaling factor for the dataparser outputs.
+    """
+
+    def __init__(
+        self,
+        another_dataparser_outputs: DataparserOutputs,
+        img_path: str,
+        mask_path: str,
+        depth_path: str = None,
+        img_suffix: str = ".png",
+        mask_suffix: str = ".png",
+        depth_suffix: str = ".npy",
+        scale_factor: float = 1.0,
+        depth_unit_scale_factor: float = 1.0,
+    ):
+        self._another_dataparser_outputs = another_dataparser_outputs
+        dataparser_outputs, depth_filenames = self._replace_dataparser_outputs(
+            another_dataparser_outputs,
+            img_path,
+            mask_path,
+            depth_path,
+            img_suffix,
+            mask_suffix,
+            depth_suffix,
+        )
+
+        # Call grandparent (InputDataset) init method.
+        # Inheritance from DepthDataset is needed to use get_metadata,
+        # but at the same time we want to use InputDataset constructor.
+        super(DepthDataset, self).__init__(dataparser_outputs, scale_factor)
+
+        self.depth_filenames = depth_filenames
+        self.depth_unit_scale_factor = depth_unit_scale_factor

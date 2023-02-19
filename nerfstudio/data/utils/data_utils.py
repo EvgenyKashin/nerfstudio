@@ -84,3 +84,28 @@ def get_depth_image_from_path(
         image = image.astype(np.float64) * scale_factor
         image = cv2.resize(image, (width, height), interpolation=interpolation)
     return torch.from_numpy(image[:, :, np.newaxis])
+
+
+def mask_out_depth_outside_aabb(
+    depth_image: torch.Tensor,
+    c2w: torch.Tensor,
+    aabb: torch.Tensor,
+) -> torch.Tensor:
+    """Set depth image's values outside of scene's AABB to negative values.
+
+    Args:
+        depth_image: depth image.
+        c2w: c2w transform matrix.
+        aabb: scene box.
+
+    Returns:
+        Depth image torch tensor with positive depth only for inside points.
+    """
+    z_dir = c2w[:3, 2]
+    depth_image_mask = depth_image > 0
+    depth_points = depth_image * z_dir
+
+    aabb_mask = (depth_points < aabb[0]) | (depth_points > aabb[1])
+    depth_image_mask = depth_image_mask & aabb_mask.any(dim=2)[..., None]
+    depth_image[depth_image_mask] *= -1.0
+    return depth_image
