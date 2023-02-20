@@ -18,6 +18,7 @@ Depth datamanager.
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing_extensions import Literal
 from rich.progress import Console
 import torch
 
@@ -51,19 +52,31 @@ class DualDepthDataManagerConfig(base_datamanager.VanillaDataManagerConfig):
 
 class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=abstract-method
     """Data manager implementation for data that requires two data sources with same cameras.
+
     Args:
         config: the DataManagerConfig used to instantiate class
     """
 
-    def setup_train(self):
-        """Sets up the data loaders for training"""
-        super().setup_train()
+    def __init__(
+        self,
+        config: DualDataManagerConfig,
+        device: Union[torch.device, str] = "cpu",
+        test_mode: Literal["test", "val", "inference"] = "val",
+        world_size: int = 1,
+        local_rank: int = 0,
+        **kwargs,  # pylint: disable=unused-argument
+    ):
+        # self.config = config
+        super().__init__(config, device, test_mode, world_size, local_rank, **kwargs)
+        self.train_dual_dataset = self.create_train_dual_dataset()
+
+    def create_train_dual_dataset(self) -> DualEquirectangularDataset:
+        """Sets up the dataset for dual training"""
         images_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032/images_52"
         mask_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032/mask_unobserved"  # mask_unobserved mask
         depth_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032/depth_midas"
 
-        # Same camera_to_worlds, but different images
-        self.train_dual_dataset = self.config._dataset_cls(
+        return self.config._dataset_cls(
             img_path=images_path,
             mask_path=mask_path,
             depth_path=depth_path,
@@ -71,6 +84,13 @@ class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=a
             # scale_factor=0.1,
             scale_factor=1.0,
         )
+
+    def setup_train(self):
+        """Sets up the data loaders for training"""
+        super().setup_train()
+
+        # Same camera_to_worlds, but different images
+        self.train_dual_dataset = self.create_train_dual_dataset()
         CONSOLE.print("Setting up training dual dataset...")
         self.train_dual_image_dataloader = CacheDataloader(
             self.train_dual_dataset,

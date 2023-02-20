@@ -110,12 +110,14 @@ class DynamicDualBatchPipeline(DynamicBatchPipeline):
         state: Dict,
         app_emb_weight_key: str = "_model.field.appearance_embedding.embedding.weight",
     ) -> Tuple[Dict, bool, int]:
-        if app_emb_weight_key in state and self.num_train_dual_data > 0:
-            print(f"Reload checkpoint with new embedding size {self.num_train_data}")
+        if app_emb_weight_key in state:
             app_emb_weight = state[app_emb_weight_key]
-            mean_emb = app_emb_weight.mean(axis=0).unsqueeze(0)
-            mean_emb = mean_emb.repeat(self.num_train_dual_data, 1)
-            app_emb_weight = torch.cat([app_emb_weight, mean_emb])
-            state[app_emb_weight_key] = app_emb_weight
+
+            if app_emb_weight.shape[0] < self.num_train_data:
+                print(f"Reload checkpoint with new embedding size {self.num_train_data}")
+                mean_emb = app_emb_weight.mean(axis=0).unsqueeze(0)
+                mean_emb = mean_emb.repeat(self.num_train_dual_data, 1)
+                app_emb_weight = torch.cat([app_emb_weight, mean_emb])
+                state[app_emb_weight_key] = app_emb_weight
 
         return state
