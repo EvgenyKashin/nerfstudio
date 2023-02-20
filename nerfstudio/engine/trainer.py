@@ -80,6 +80,10 @@ class TrainerConfig(ExperimentConfig):
     """Path to config YAML file."""
     log_gradients: bool = False
     """Optionally log gradients during training"""
+    load_optimizers: bool = True
+    """Optionally load a pre-trained optimizers; works only with load_dir."""
+    load_grad_scaler: bool = True
+    """Optionally load a pre-trained grad_scaler; works only with load_dir."""
 
 
 class Trainer:
@@ -322,8 +326,10 @@ class Trainer:
             self._start_step = loaded_state["step"] + 1
             # load the checkpoints for pipeline, optimizers, and gradient scalar
             self.pipeline.load_pipeline(loaded_state["pipeline"], loaded_state["step"])
-            self.optimizers.load_optimizers(loaded_state["optimizers"])
-            self.grad_scaler.load_state_dict(loaded_state["scalers"])
+            if self.config.load_optimizers:
+                self.optimizers.load_optimizers(loaded_state["optimizers"])
+            if self.config.load_grad_scaler:
+                self.grad_scaler.load_state_dict(loaded_state["scalers"])
             CONSOLE.print(f"done loading checkpoint from {load_path}")
         else:
             CONSOLE.print("No checkpoints to load, training from scratch")
@@ -367,6 +373,7 @@ class Trainer:
         """
         self.optimizers.zero_grad_all()
         cpu_or_cuda_str = self.device.split(":")[0]
+        # import pdb;pdb.set_trace()
         with torch.autocast(device_type=cpu_or_cuda_str, enabled=self.mixed_precision):
             _, loss_dict, metrics_dict = self.pipeline.get_train_loss_dict(step=step)
             loss = functools.reduce(torch.add, loss_dict.values())
