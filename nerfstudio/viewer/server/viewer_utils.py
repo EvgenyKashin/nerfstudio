@@ -389,13 +389,17 @@ class ViewerState:
             # save a model checkpoint
             trainer.save_checkpoint(step)
             # write to json file in datapath directory
-            camera_path_filename = camera_path_payload["camera_path_filename"] + ".json"
+            camera_path_filename = Path(camera_path_payload["camera_path_filename"]).with_suffix(".json")
+            self.datapath = Path(self.datapath)
+            if self.datapath.suffix == ".json":
+                self.datapath = self.datapath.parent
+
             camera_path = camera_path_payload["camera_path"]
             camera_paths_directory = os.path.join(self.datapath, "camera_paths")
             if not os.path.exists(camera_paths_directory):
                 os.mkdir(camera_paths_directory)
 
-            write_to_json(Path(os.path.join(camera_paths_directory, camera_path_filename)), camera_path)
+            write_to_json(Path(os.path.join(camera_paths_directory, camera_path_filename.name)), camera_path)
             self.vis["camera_path_payload"].delete()
 
     def _check_populate_paths_payload(self, trainer, step: int):
