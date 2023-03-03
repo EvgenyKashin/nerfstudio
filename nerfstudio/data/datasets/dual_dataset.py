@@ -79,13 +79,13 @@ class DualEquirectangularDataset(InputDataset):
         depth_filenames = []
         cameras_to_worlds = []
         for i, fname in enumerate(another_dataparser_outputs.image_filenames):
-            img_fname = (Path(img_path) / fname.stem).with_suffix(img_suffix)
-            mask_fname = (Path(mask_path) / fname.stem).with_suffix(mask_suffix)
+            img_fname = Path(img_path) / (fname.stem + img_suffix)
+            mask_fname = Path(mask_path) / (fname.stem + mask_suffix)
             if not (img_fname.exists() and mask_fname.exists()):
                 continue
 
             if depth_path is not None:
-                depth_fname = (Path(depth_path) / fname.stem).with_suffix(depth_suffix)
+                depth_fname = Path(depth_path) / (fname.stem + depth_suffix)
                 depth_filenames.append(depth_fname)
 
             image_filenames.append(img_fname)
