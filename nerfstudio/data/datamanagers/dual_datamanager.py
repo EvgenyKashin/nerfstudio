@@ -72,9 +72,14 @@ class DualDataManager(base_datamanager.VanillaDataManager):  # pylint: disable=a
 
     def create_train_dual_dataset(self) -> DualEquirectangularDataset:
         """Sets up the dataset for dual training"""
-        images_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032/images_52"
-        mask_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032/mask_unobserved"  # mask_unobserved mask
-        depth_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032/depth_midas"
+        # images_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032_localblurcond_skipempty/images_52"
+        # mask_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032_localblurcond_skipempty/mask_unobserved"
+        # depth_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/1602/str032_localblurcond_skipempty/depth_midas"
+
+        images_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/010323/s4"
+        mask_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/010323/mask_unobserved"
+        # depth_path = "/shared/storage/cs/staffstore/ek1234/projects/spherical_inpainting/pano_results/0103/mutli_s6/depth_midas"
+        depth_path = "/shared/storage/cs/staffstore/ek1234/projects/nerf_exps/temp_out/depths/mutli_s4_midas3_frustum_ransac_posemb2_inv/npy" # mutli_s4_midas3_frustum_ransac_posemb
 
         return self.config._dataset_cls(
             img_path=images_path,

@@ -380,9 +380,9 @@ method_configs["semantic-nerfw"] = TrainerConfig(
     mixed_precision=True,
     pipeline=VanillaPipelineConfig(
         datamanager=SemanticDataManagerConfig(
-            dataparser=FriendsDataParserConfig(), train_num_rays_per_batch=4096, eval_num_rays_per_batch=8192
+            dataparser=FriendsDataParserConfig(), train_num_rays_per_batch=4096, eval_num_rays_per_batch=4096
         ),
-        model=SemanticNerfWModelConfig(eval_num_rays_per_chunk=1 << 16),
+        model=SemanticNerfWModelConfig(eval_num_rays_per_chunk=1 << 13),
     ),
     optimizers={
         "proposal_networks": {
@@ -394,7 +394,33 @@ method_configs["semantic-nerfw"] = TrainerConfig(
             "scheduler": None,
         },
     },
-    viewer=ViewerConfig(num_rays_per_chunk=1 << 16),
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 13),
+    vis="viewer",
+)
+
+method_configs["friends-facto"] = TrainerConfig(
+    method_name="friends-facto",
+    steps_per_eval_batch=500,
+    steps_per_save=2000,
+    max_num_iterations=30000,
+    mixed_precision=True,
+    pipeline=VanillaPipelineConfig(
+        datamanager=SemanticDataManagerConfig(
+            dataparser=FriendsDataParserConfig(), train_num_rays_per_batch=4096, eval_num_rays_per_batch=4096
+        ),
+        model=NerfactoModelConfig(eval_num_rays_per_chunk=1 << 15),
+    ),
+    optimizers={
+        "proposal_networks": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": None,
+        },
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": None,
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 13),
     vis="viewer",
 )
 
