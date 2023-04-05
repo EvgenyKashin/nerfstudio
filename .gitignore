@@ -171,6 +171,7 @@ events.out.*
 # Data
 data
 !*/data
+!docs/reference/api/data/
 
 # Misc
 old/
@@ -184,3 +185,8 @@ bash/
 cache/
 package-lock.json
 camera_paths/
+.DS_Store
+._.DS_Store
+*/**/.DS_Store
+*/**/._.DS_Store
+

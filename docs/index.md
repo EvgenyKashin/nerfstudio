@@ -52,8 +52,15 @@ quickstart/custom_dataset
 quickstart/viewer_quickstart
 quickstart/export_geometry
 quickstart/data_conventions
-quickstart/blender_addon
 Contributing<reference/contributing>
+```
+
+```{toctree}
+:hidden:
+:caption: Extensions
+extensions/blender_addon
+extensions/unreal_engine
+extensions/sdfstudio
 ```
 
 ```{toctree}
@@ -68,6 +75,7 @@ nerfology/model_components/index
 :hidden:
 :caption: Developer Guides
 
+developer_guides/new_methods
 developer_guides/pipelines/index
 developer_guides/viewer/viewer_overview
 developer_guides/config
@@ -154,6 +162,8 @@ We'll be constantly growing this list! So make sure to check back in to see our 
 - Developed by [Ruilong Li](https://www.liruilong.cn/)
 
 ## Citation
+
+You can find a paper writeup of the framework on [arXiv](https://arxiv.org/abs/2302.04264).
 
 If you use this library or find the documentation useful for your research, please consider citing:
 

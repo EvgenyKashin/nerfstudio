@@ -5,7 +5,7 @@ Training model on existing datasets is only so fun. If you would like to train o
 To process your own data run:
 
 ```bash
-ns-process-data {video,images,polycam,insta360,record3d} --data {DATA_PATH} --output-dir {PROCESSED_DATA_DIR}
+ns-process-data {video,images,polycam,record3d} --data {DATA_PATH} --output-dir {PROCESSED_DATA_DIR}
 ```
 
 A full set of arguments can be found {doc}`here</reference/cli/ns_process_data>`.
@@ -15,10 +15,12 @@ We Currently support the following custom data types:
 | ----------------------------- | -------------- | ----------------------------------------------- | ----------------------- |
 | 📷 [Images](images_and_video) | Any | [COLMAP](https://colmap.github.io/install.html) | 🐢 |
 | 📹 [Video](images_and_video) | Any | [COLMAP](https://colmap.github.io/install.html) | 🐢 |
+| 🌎 [360 Data](360_data) | Any | [COLMAP](https://colmap.github.io/install.html) | 🐢 |
 | 📱 [Polycam](polycam) | IOS with LiDAR | [Polycam App](https://poly.cam/) | 🐇 |
 | 📱 [KIRI Engine](kiri) | IOS or Android | [KIRI Engine App](https://www.kiriengine.com/) | 🐇 |
 | 📱 [Record3D](record3d) | IOS with LiDAR | [Record3D app](https://record3d.app/) | 🐇 |
 | 🖥 [Metashape](metashape) | Any | [Metashape](https://www.agisoft.com/) | 🐇 |
+| 🖥 [RealityCapture](realitycapture) | Any | [RealityCapture](https://www.capturingreality.com/realitycapture) | 🐇 |
 
 (images_and_video)=
 
@@ -30,12 +32,6 @@ To assist running on custom data we have a script that will process a video or f
 :class: info
 
 - COLMAP can be finicky. Try your best to capture overlapping, non-blurry images.
-  :::
-
-:::{admonition} Note
-:class: warning
-
-- If COLMAP opens in a new window, simply close it to resume processing.
   :::
 
 ### Processing Data
@@ -290,3 +286,59 @@ ns-process-data metashape --data {data directory} --xml {xml file} --output-dir 
 ```bash
 ns-train nerfacto --data {output directory}
 ```
+
+(realitycapture)=
+
+## RealityCapture
+
+1. Align your images using RealityCapture. `ALIGNMENT -> Align Images`
+
+2. Export the camera alignment as a `csv` file. Choose `Internal/External camera parameters`
+
+3. Convert the data to the nerfstudio format.
+
+```bash
+ns-process-data realitycapture --data {data directory} --csv {csv file} --output-dir {output directory}
+```
+
+4. Train with nerfstudio!
+
+```bash
+ns-train nerfacto --data {output directory}
+```
+
+(360_data)=
+
+## 360 Data (Equirectangular)
+
+Equirectangular data is data that has been taken by a 360 camera such as Insta360. Both equirectangular image sets and videos can be processed by nerfstudio.
+
+### Images
+
+For a set of equirectangular images, process the data using the following command:
+
+```bash
+ns-process-data images --camera-type equirectangular --images-per-equirect {8, or 14} --crop-factor {top bottom left right} --data {data directory} --output-dir {output directory}
+```
+
+The images-per-equirect argument is the number of images that will be sampled from each equirectangular image. We have found that 8 images per equirectangular image is sufficient for most use cases so it defaults to that. However, if you find that there isn't enough detail in the nerf or that colmap is having trouble aligning the images, you can try increasing the number of images per equirectangular image to 14. See the video section below for details on cropping.
+
+### Videos
+
+For videos we recommend taking a video with the camera held on top of your head. This will result in any unwanted capturer to just be in the bottom of each frame image and therefore can be cropped out.
+
+For a video, process the data using the following command:
+
+```bash
+ns-process-data video --camera-type equirectangular --images-per-equirect {8, or 14} --num-frames-target {num equirectangular frames to sample from} --crop-factor {top bottom left right} --data {data directory} --output-dir {output directory}
+```
+
+See the equirectangular images section above for a description of the `--images-per-equirect` argument.
+
+The `num-frames-target` argument is optional but it is recommended to set it to 3*(seconds of video) frames. For example, if you have a 30 second video, you would use `--num-frames-target 90` (3*30=90). This number was chosen from a bit of experimentation and seems to work well for most videos. It is by no means a hard rule and you can experiment with different values.
+
+The `crop-factor` argument is optional but often very helpful. This is because equirectangular videos taken by 360 cameras tend to have a portion of the bottom of the image that is the person who was holding the camera over their head.
+
+  <img src="imgs/equirect_crop.jpg">
+
+This obscene mesh of human is obviously not helpful in training a nerf so we can remove it by cropping the bottom 20% of the image. This can be done by using the `--crop-factor 0 0.2 0 0` argument.
