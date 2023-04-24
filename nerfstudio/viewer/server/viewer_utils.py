@@ -170,7 +170,7 @@ def apply_colormap(
         return outputs[output_type]
 
     # rendering depth outputs
-    if outputs[output_type].shape[-1] == 1 and outputs[output_type].dtype == torch.float:
+    if outputs[output_type].shape[-1] in [1] and outputs[output_type].dtype == torch.float:
         output = outputs[output_type]
         if control_panel.colormap_normalize:
             output = output - torch.min(output)
@@ -179,6 +179,9 @@ def apply_colormap(
         output = torch.clip(output, 0, 1)
         if control_panel.colormap_invert:
             output = 1 - output
+        # if outputs[output_type].shape[-1] == 4:
+        #     # if the output is latents, we need to slice only 3 channels out of 4
+        #     return outputs[output_type][..., :3]
         if colormap_type == ColormapTypes.DEFAULT:
             return colormaps.apply_colormap(output, cmap=ColormapTypes.TURBO.value)
         return colormaps.apply_colormap(output, cmap=colormap_type)
@@ -193,5 +196,23 @@ def apply_colormap(
     # rendering boolean outputs
     if outputs[output_type].dtype == torch.bool:
         return colormaps.apply_boolean_colormap(outputs[output_type])
+    
+    # rendering latents
+    if outputs[output_type].shape[-1] == 4:
+        # print(outputs[output_type])
+        lat2rgb_transform = torch.tensor(
+            [[ 0.2142,  0.2598,  0.1763,  0.2922],
+            [ 0.0383, -0.0488, -0.0573,  0.1445],
+            [-0.0806, -0.0776, -0.0246,  0.2225],
+            [ 0.0832,  0.0544, -0.1243,     0]]
+        ).to(outputs[output_type])
+        output_lat = outputs[output_type] @ lat2rgb_transform[:, :3] + \
+            lat2rgb_transform[:3, 3:][:, 0]
+        # print()
+        # print(output_lat)
+        # print()
+        # print()
+        output_lat = torch.clip(output_lat, 0, 1)
+        return output_lat
 
     raise NotImplementedError

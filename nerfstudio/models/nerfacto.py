@@ -128,6 +128,8 @@ class NerfactoModelConfig(ModelConfig):
     """Whether to predict normals or not."""
     disable_scene_contraction: bool = False
     """Whether to disable scene contraction or not."""
+    mlp_head_n_output_dims: int = 3
+    """Number of output dimensions for the MLP head."""
 
 
 class NerfactoModel(Model):
@@ -161,6 +163,7 @@ class NerfactoModel(Model):
             num_images=self.num_train_data,
             use_pred_normals=self.config.predict_normals,
             use_average_appearance_embedding=self.config.use_average_appearance_embedding,
+            mlp_head_n_output_dims=self.config.mlp_head_n_output_dims,
         )
 
         self.density_fns = []
@@ -268,11 +271,9 @@ class NerfactoModel(Model):
         weights = ray_samples.get_weights(field_outputs[FieldHeadNames.DENSITY])
         weights_list.append(weights)
         ray_samples_list.append(ray_samples)
-
         rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
         depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
         accumulation = self.renderer_accumulation(weights=weights)
-
         outputs = {
             "rgb": rgb,
             "accumulation": accumulation,

@@ -104,6 +104,7 @@ class TCNNNerfactoField(Field):
         use_pred_normals: bool = False,
         use_average_appearance_embedding: bool = False,
         spatial_distortion: SpatialDistortion = None,
+        mlp_head_n_output_dims: int = 3,
     ) -> None:
         super().__init__()
 
@@ -214,11 +215,11 @@ class TCNNNerfactoField(Field):
 
         self.mlp_head = tcnn.Network(
             n_input_dims=self.direction_encoding.n_output_dims + self.geo_feat_dim + self.appearance_embedding_dim,
-            n_output_dims=3,
+            n_output_dims=mlp_head_n_output_dims,
             network_config={
                 "otype": "FullyFusedMLP",
                 "activation": "ReLU",
-                "output_activation": "Sigmoid",
+                "output_activation": "Sigmoid" if hidden_dim_color == 3 else "None",
                 "n_neurons": hidden_dim_color,
                 "n_hidden_layers": num_layers_color - 1,
             },

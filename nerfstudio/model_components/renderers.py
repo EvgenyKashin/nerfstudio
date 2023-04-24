@@ -136,7 +136,8 @@ class RGBRenderer(nn.Module):
             rgb, weights, background_color=self.background_color, ray_indices=ray_indices, num_rays=num_rays
         )
         if not self.training:
-            torch.clamp_(rgb, min=0.0, max=1.0)
+            if rgb.shape[-1] != 4:
+                torch.clamp_(rgb, min=0.0, max=1.0)
         return rgb
 
 

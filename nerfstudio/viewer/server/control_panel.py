@@ -151,7 +151,8 @@ class ControlPanel:
             dtype: the data type of the render
         """
         colormap_options = []
-        if dimensions == 3:
+        # RGB has 3 dimensions, latents have 4 dimensions
+        if dimensions in [3, 4]:
             colormap_options = [viewer_utils.ColormapTypes.DEFAULT.value]
         if dimensions == 1 and dtype == torch.float:
             colormap_options = [c.value for c in list(viewer_utils.ColormapTypes)[1:]]

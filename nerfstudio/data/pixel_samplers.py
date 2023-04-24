@@ -99,8 +99,10 @@ class PixelSampler:  # pylint: disable=too-few-public-methods
         collated_batch = {
             key: value[c, y, x] for key, value in batch.items() if key != "image_idx" and value is not None
         }
-
-        assert collated_batch["image"].shape == (num_rays_per_batch, 3), collated_batch["image"].shape
+        
+        assert collated_batch["image"].shape[0] == num_rays_per_batch, collated_batch["image"].shape
+        # It could be 3 or 4 channels, depending on whether or not we use RGB or latents
+        assert collated_batch["image"].shape[1] in [3, 4], collated_batch["image"].shape
 
         # Needed to correct the random indices to their actual camera idx locations.
         indices[:, 0] = batch["image_idx"][c]
