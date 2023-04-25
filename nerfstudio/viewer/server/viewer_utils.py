@@ -199,7 +199,6 @@ def apply_colormap(
     
     # rendering latents
     if outputs[output_type].shape[-1] == 4:
-        # print(outputs[output_type])
         lat2rgb_transform = torch.tensor(
             [[ 0.2142,  0.2598,  0.1763,  0.2922],
             [ 0.0383, -0.0488, -0.0573,  0.1445],
@@ -208,10 +207,6 @@ def apply_colormap(
         ).to(outputs[output_type])
         output_lat = outputs[output_type] @ lat2rgb_transform[:, :3] + \
             lat2rgb_transform[:3, 3:][:, 0]
-        # print()
-        # print(output_lat)
-        # print()
-        # print()
         output_lat = torch.clip(output_lat, 0, 1)
         return output_lat
 

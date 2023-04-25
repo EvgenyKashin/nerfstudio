@@ -41,7 +41,31 @@ from nerfstudio.utils import install_checks
 from nerfstudio.utils.eval_utils import eval_setup
 from nerfstudio.utils.rich_utils import ItersPerSecColumn
 
+from diffusers import StableDiffusionInpaintPipeline
+
 CONSOLE = Console(width=120)
+
+
+def lat2rgb(sd_pipe, latents):
+    latents_prep = torch.permute(latents.to(sd_pipe.vae.dtype),
+                                 (2, 0, 1))[None, ...]
+    with torch.no_grad():
+        rgb = sd_pipe.decode_latents(latents_prep)[0]
+    rgb = np.clip(rgb, 0, 1)
+    return (rgb * 255).astype(np.uint8)
+
+
+def lat2rgb_fast(latents):
+    lat2rgb_transform = torch.tensor(
+            [[ 0.2142,  0.2598,  0.1763,  0.2922],
+            [ 0.0383, -0.0488, -0.0573,  0.1445],
+            [-0.0806, -0.0776, -0.0246,  0.2225],
+            [ 0.0832,  0.0544, -0.1243,     0]]
+        ).to(latents)
+    output_lat = latents @ lat2rgb_transform[:, :3] + \
+        lat2rgb_transform[:3, 3:][:, 0]
+    output_lat = torch.clip(output_lat, 0, 1)
+    return (output_lat.cpu().numpy() * 255).astype(np.uint8)
 
 
 def _render_trajectory_video(
@@ -72,6 +96,7 @@ def _render_trajectory_video(
     cameras.rescale_output_resolution(rendered_resolution_scaling_factor)
     cameras = cameras.to(pipeline.device)
     fps = len(cameras) / seconds
+    sd_pipe = None
 
     progress = Progress(
         TextColumn(":movie_camera: Rendering :movie_camera:"),
@@ -126,6 +151,19 @@ def _render_trajectory_video(
                     output_image = outputs[rendered_output_name].cpu().numpy()
                     if output_image.shape[-1] == 1:
                         output_image = np.concatenate((output_image,) * 3, axis=-1)
+                    if output_image.shape[-1] == 4:
+                        if sd_pipe is None:
+                            model_ckpt = "stabilityai/stable-diffusion-2-inpainting"
+                            sd_pipe = StableDiffusionInpaintPipeline.from_pretrained(
+                                model_ckpt,
+                                torch_dtype=torch.float16,
+                            )
+                            sd_pipe = sd_pipe.to(pipeline.device)
+                        # latent to rgb using decoder
+                        # output_image = lat2rgb(sd_pipe, outputs[rendered_output_name])
+                        # latent to rgb using linear transform approximation
+                        output_image = lat2rgb_fast(outputs[rendered_output_name])
+
                     render_image.append(output_image)
                 render_image = np.concatenate(render_image, axis=1)
                 if output_format == "images":
