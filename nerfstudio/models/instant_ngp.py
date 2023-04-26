@@ -83,6 +83,8 @@ class InstantNGPModelConfig(ModelConfig):
     """Whether to use an appearance embedding."""
     background_color: Literal["random", "black", "white"] = "random"
     """The color that is given to untrained areas."""
+    mlp_head_n_output_dims: int = 3
+    """Number of output dimensions for the MLP head."""
 
 
 class NGPModel(Model):
@@ -109,6 +111,7 @@ class NGPModel(Model):
             num_images=self.num_train_data,
             log2_hashmap_size=self.config.log2_hashmap_size,
             max_res=self.config.max_res,
+            mlp_head_n_output_dims=self.config.mlp_head_n_output_dims,
         )
 
         self.scene_aabb = Parameter(self.scene_box.aabb.flatten(), requires_grad=False)
@@ -249,11 +252,13 @@ class NGPModel(Model):
         rgb = torch.moveaxis(rgb, -1, 0)[None, ...]
 
         psnr = self.psnr(image, rgb)
-        ssim = self.ssim(image, rgb)
-        lpips = self.lpips(image, rgb)
+        # ssim = self.ssim(image, rgb)
+        # lpips = self.lpips(image, rgb)
 
         # all of these metrics will be logged as scalars
-        metrics_dict = {"psnr": float(psnr.item()), "ssim": float(ssim), "lpips": float(lpips)}  # type: ignore
+        metrics_dict = {"psnr": float(psnr.item()),
+                        # "ssim": float(ssim), "lpips": float(lpips)
+                        }  # type: ignore
         # TODO(ethan): return an image dictionary
 
         images_dict = {

@@ -73,6 +73,7 @@ class TCNNInstantNGPField(Field):
         num_levels: int = 16,
         log2_hashmap_size: int = 19,
         max_res: int = 2048,
+        mlp_head_n_output_dims: int = 3,
     ) -> None:
         super().__init__()
 
@@ -123,11 +124,11 @@ class TCNNInstantNGPField(Field):
             in_dim += self.appearance_embedding_dim
         self.mlp_head = tcnn.Network(
             n_input_dims=in_dim,
-            n_output_dims=3,
+            n_output_dims=mlp_head_n_output_dims,
             network_config={
                 "otype": "FullyFusedMLP",
                 "activation": "ReLU",
-                "output_activation": "Sigmoid",
+                "output_activation": "Sigmoid" if mlp_head_n_output_dims == 3 else "None",
                 "n_neurons": hidden_dim_color,
                 "n_hidden_layers": num_layers_color - 1,
             },
