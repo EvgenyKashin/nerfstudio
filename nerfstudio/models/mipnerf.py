@@ -38,6 +38,7 @@ from nerfstudio.model_components.renderers import (
 )
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps, colors, misc
+from nerfstudio.field_components.field_heads import LatentsFieldHead
 
 
 class MipNerfModel(Model):
@@ -68,7 +69,8 @@ class MipNerfModel(Model):
         )
 
         self.field = NeRFField(
-            position_encoding=position_encoding, direction_encoding=direction_encoding, use_integrated_encoding=True
+            position_encoding=position_encoding, direction_encoding=direction_encoding, use_integrated_encoding=True,
+            field_heads=(LatentsFieldHead(),)
         )
 
         # samplers
@@ -76,7 +78,8 @@ class MipNerfModel(Model):
         self.sampler_pdf = PDFSampler(num_samples=self.config.num_importance_samples, include_original=False)
 
         # renderers
-        self.renderer_rgb = RGBRenderer(background_color=colors.WHITE)
+        # self.renderer_rgb = RGBRenderer(background_color=colors.WHITE)
+        self.renderer_rgb = RGBRenderer(background_color="last_sample")
         self.renderer_accumulation = AccumulationRenderer()
         self.renderer_depth = DepthRenderer()
 
@@ -107,7 +110,8 @@ class MipNerfModel(Model):
         field_outputs_coarse = self.field.forward(ray_samples_uniform)
         weights_coarse = ray_samples_uniform.get_weights(field_outputs_coarse[FieldHeadNames.DENSITY])
         rgb_coarse = self.renderer_rgb(
-            rgb=field_outputs_coarse[FieldHeadNames.RGB],
+            # rgb=field_outputs_coarse[FieldHeadNames.RGB],
+            rgb=field_outputs_coarse[FieldHeadNames.LATENTS],
             weights=weights_coarse,
         )
         accumulation_coarse = self.renderer_accumulation(weights_coarse)
@@ -120,7 +124,8 @@ class MipNerfModel(Model):
         field_outputs_fine = self.field.forward(ray_samples_pdf)
         weights_fine = ray_samples_pdf.get_weights(field_outputs_fine[FieldHeadNames.DENSITY])
         rgb_fine = self.renderer_rgb(
-            rgb=field_outputs_fine[FieldHeadNames.RGB],
+            # rgb=field_outputs_fine[FieldHeadNames.RGB],
+            rgb=field_outputs_fine[FieldHeadNames.LATENTS],
             weights=weights_fine,
         )
         accumulation_fine = self.renderer_accumulation(weights_fine)
@@ -178,15 +183,15 @@ class MipNerfModel(Model):
 
         coarse_psnr = self.psnr(image, rgb_coarse)
         fine_psnr = self.psnr(image, rgb_fine)
-        fine_ssim = self.ssim(image, rgb_fine)
-        fine_lpips = self.lpips(image, rgb_fine)
+        # fine_ssim = self.ssim(image, rgb_fine)
+        # fine_lpips = self.lpips(image, rgb_fine)
 
         metrics_dict = {
             "psnr": float(fine_psnr.item()),
             "coarse_psnr": float(coarse_psnr.item()),
             "fine_psnr": float(fine_psnr.item()),
-            "fine_ssim": float(fine_ssim.item()),
-            "fine_lpips": float(fine_lpips.item()),
+            # "fine_ssim": float(fine_ssim.item()),
+            # "fine_lpips": float(fine_lpips.item()),
         }
         images_dict = {"img": combined_rgb, "accumulation": combined_acc, "depth": combined_depth}
         return metrics_dict, images_dict

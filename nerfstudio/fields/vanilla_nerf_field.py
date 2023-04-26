@@ -28,6 +28,7 @@ from nerfstudio.field_components.field_heads import (
     FieldHead,
     FieldHeadNames,
     RGBFieldHead,
+    LatentsFieldHead
 )
 from nerfstudio.field_components.mlp import MLP
 from nerfstudio.field_components.spatial_distortions import SpatialDistortion
