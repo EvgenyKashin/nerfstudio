@@ -160,9 +160,9 @@ def _render_trajectory_video(
                             )
                             sd_pipe = sd_pipe.to(pipeline.device)
                         # latent to rgb using decoder
-                        # output_image = lat2rgb(sd_pipe, outputs[rendered_output_name])
+                        output_image = lat2rgb(sd_pipe, outputs[rendered_output_name])
                         # latent to rgb using linear transform approximation
-                        output_image = lat2rgb_fast(outputs[rendered_output_name])
+                        # output_image = lat2rgb_fast(outputs[rendered_output_name])
 
                     render_image.append(output_image)
                 render_image = np.concatenate(render_image, axis=1)

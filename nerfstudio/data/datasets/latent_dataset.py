@@ -57,7 +57,7 @@ class LatentDataset(InputDataset):
         """
         image_name = self._dataparser_outputs.image_filenames[image_idx].name
         with safe_open(self.latents_path, framework="pt") as f:
-            image = f.get_tensor(image_name)
+            image = f.get_tensor(image_name).to(torch.float32)
         image = torch.permute(image[0], (1, 2, 0))  # BCHW -> HWC
 
         return image

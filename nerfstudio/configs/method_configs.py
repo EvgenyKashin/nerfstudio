@@ -604,6 +604,53 @@ method_configs["nerfacto-latent"] = TrainerConfig(
     vis="viewer",
 )
 
+method_configs["mipnerf-latent"] = TrainerConfig(
+    method_name="mipnerf-latent",
+    pipeline=VanillaPipelineConfig(
+        datamanager=LatentDataManagerConfig(dataparser=LatentBlenderDataParserConfig(), train_num_rays_per_batch=1024),
+        model=VanillaModelConfig(
+            _target=MipNerfModel,
+            loss_coefficients={"rgb_loss_coarse": 0.1, "rgb_loss_fine": 1.0},
+            num_coarse_samples=128,
+            num_importance_samples=128,
+            eval_num_rays_per_chunk=1024,
+        ),
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": RAdamOptimizerConfig(lr=5e-4, eps=1e-08),
+            "scheduler": None,
+        }
+    },
+)
+
+method_configs["instant-ngp-bounded-latent"] = TrainerConfig(
+    method_name="instant-ngp-bounded-latent",
+    steps_per_eval_batch=500,
+    steps_per_save=2000,
+    max_num_iterations=30000,
+    mixed_precision=True,
+    pipeline=DynamicBatchPipelineConfig(
+        datamanager=LatentDataManagerConfig(dataparser=LatentBlenderDataParserConfig(), train_num_rays_per_batch=8192),
+        model=InstantNGPModelConfig(
+            eval_num_rays_per_chunk=8192,
+            contraction_type=ContractionType.AABB,
+            render_step_size=0.001,
+            max_num_samples_per_ray=48,
+            near_plane=0.01,
+            background_color="black",
+        ),
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": None,
+        }
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=64000),
+    vis="viewer",
+)
+
 external_methods, external_descriptions = discover_methods()
 method_configs.update(external_methods)
 descriptions.update(external_descriptions)
