@@ -33,6 +33,8 @@ from nerfstudio.data.dataparsers.base_dataparser import DataparserOutputs
 from nerfstudio.data.utils.data_utils import get_image_mask_tensor_from_path
 from nerfstudio.data.datasets.base_dataset import InputDataset
 
+from diffusers import StableDiffusionInpaintPipeline
+
 
 class LatentDataset(InputDataset):
     """Dataset that returns images.
@@ -61,3 +63,50 @@ class LatentDataset(InputDataset):
         image = torch.permute(image[0], (1, 2, 0))  # BCHW -> HWC
 
         return image
+
+
+class LatentDatasetConverter(InputDataset):
+    """Dataset that returns SD latents. WIP!
+
+    Args:
+        dataparser_outputs: description of where and how to read input images.
+        scale_factor: The scaling factor for the dataparser outputs
+    """
+
+    def __init__(self, dataparser_outputs: DataparserOutputs, scale_factor: float = 1.0):
+        super().__init__(dataparser_outputs, scale_factor)
+
+        model_ckpt = "stabilityai/stable-diffusion-2-inpainting"
+        sd_pipe = StableDiffusionInpaintPipeline.from_pretrained(
+            model_ckpt,
+            torch_dtype=torch.float16,
+        )
+        self.sd_pipe = sd_pipe.to("cuda")
+
+        assert self.cameras.width[0].item() == self.cameras.height[0].item(), "Image width and height must be equal"
+        # self.cameras.width could be != 512, so we resize it to 512 by finding the proper scale_factor
+        new_scale_factor = 512 / self.cameras.width[0].item()
+        self.cameras.rescale_output_resolution(scaling_factor=new_scale_factor)
+        # it would be used for image resizing in self.get_numpy_image
+        self.scale_factor = new_scale_factor
+
+        assert self.cameras.height[0].item() % sd_pipe.vae_scale_factor == 0, f"Image height {self.cameras.height[0].item()} must be divisible by vae_scale_factor"
+        self.cameras.rescale_output_resolution(scaling_factor=1.0 / sd_pipe.vae_scale_factor)
+
+    def get_metadata(self, data: Dict) -> Dict:
+        """Dirty rewrite data["image"] field with latents.
+        """
+        image_orig = data["image"].clone()
+        image = data["image"] * 2 - 1
+        image = torch.permute(image, (2, 0, 1))[None, ...].to(self.sd_pipe.vae.device).half()
+        # It's fails here because of multiprocessing
+        # from multiprocessing import Lock
+        # with Lock(): # DOESN'T WORK
+        # Only manual change of num_workers to 0 in DataLoader works
+        with torch.no_grad():
+            latents = self.sd_pipe.vae.encode(image)
+        latents = latents.latent_dist.sample() * 0.18215
+        latents = torch.permute(latents[0], (1, 2, 0)).to(torch.float32)  # BCHW -> HWC
+        # dirty ovveride
+        updated_data = {"image": latents, "image_orig": image_orig}
+        return updated_data
