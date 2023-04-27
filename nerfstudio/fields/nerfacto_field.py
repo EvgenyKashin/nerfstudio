@@ -95,7 +95,7 @@ class TCNNNerfactoField(Field):
         num_layers_transient: int = 2,
         hidden_dim_color: int = 64,
         hidden_dim_transient: int = 64,
-        appearance_embedding_dim: int = 32,
+        appearance_embedding_dim: int = 1,
         transient_embedding_dim: int = 16,
         use_transient_embedding: bool = False,
         use_semantics: bool = False,
@@ -219,7 +219,7 @@ class TCNNNerfactoField(Field):
             network_config={
                 "otype": "FullyFusedMLP",
                 "activation": "ReLU",
-                "output_activation": "Sigmoid" if hidden_dim_color == 3 else "None",
+                "output_activation": "Sigmoid" if mlp_head_n_output_dims == 3 else "None",
                 "n_neurons": hidden_dim_color,
                 "n_hidden_layers": num_layers_color - 1,
             },
