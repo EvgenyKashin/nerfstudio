@@ -24,6 +24,7 @@ RED = torch.tensor([1.0, 0.0, 0.0])
 GREEN = torch.tensor([0.0, 1.0, 0.0])
 BLUE = torch.tensor([0.0, 0.0, 1.0])
 BLACK_LATENT = torch.tensor([-1.0674, -2.6035,  1.0479,  1.3145])
+WHITE_LATENT = torch.tensor([1.8291,  1.5029, -0.0822, -1.1885])
 
 COLORS_DICT = {
     "white": WHITE,
@@ -32,6 +33,7 @@ COLORS_DICT = {
     "green": GREEN,
     "blue": BLUE,
     "black_latent": BLACK_LATENT,
+    "white_latent": WHITE_LATENT,
 }
 
 

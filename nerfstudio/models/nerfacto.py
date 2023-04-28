@@ -71,7 +71,8 @@ class NerfactoModelConfig(ModelConfig):
     """How far along the ray to start sampling."""
     far_plane: float = 1000.0
     """How far along the ray to stop sampling."""
-    background_color: Literal["random", "last_sample", "black", "white", "black_latent"] = "last_sample"
+    background_color: Literal["random", "last_sample", "black", "white",
+                              "black_latent", "white_latent"] = "last_sample"
     """Whether to randomize the background color."""
     hidden_dim: int = 64
     """Dimension of hidden layers"""
