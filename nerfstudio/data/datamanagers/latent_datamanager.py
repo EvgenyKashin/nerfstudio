@@ -36,14 +36,13 @@ class LatentDataManager(base_datamanager.VanillaDataManager):  # pylint: disable
         config: the DataManagerConfig used to instantiate class
     """
     
-    # LatentDatasetConverter WIP
-    def create_train_dataset(self) -> LatentDataset:
+    def create_train_dataset(self) -> LatentDatasetConverter:
         self.train_dataparser_outputs = self.dataparser.get_dataparser_outputs(split="train")
-        return LatentDataset(
+        return LatentDatasetConverter(
             dataparser_outputs=self.train_dataparser_outputs,
         )
 
-    def create_eval_dataset(self) -> LatentDataset:
-        return LatentDataset(
+    def create_eval_dataset(self) -> LatentDatasetConverter:
+        return LatentDatasetConverter(
             dataparser_outputs=self.dataparser.get_dataparser_outputs(split=self.test_split),
         )

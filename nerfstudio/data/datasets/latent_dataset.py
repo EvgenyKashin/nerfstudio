@@ -16,21 +16,14 @@
 Dataset.
 """
 from __future__ import annotations
-
-from copy import deepcopy
-from pathlib import Path
 from typing import Dict, List
 
-import numpy as np
-import numpy.typing as npt
 import torch
-from PIL import Image
-from torch.utils.data import Dataset
 from torchtyping import TensorType
 from safetensors import safe_open
+from multiprocessing import Lock
 
 from nerfstudio.data.dataparsers.base_dataparser import DataparserOutputs
-from nerfstudio.data.utils.data_utils import get_image_mask_tensor_from_path
 from nerfstudio.data.datasets.base_dataset import InputDataset
 
 from diffusers import StableDiffusionInpaintPipeline
@@ -93,20 +86,20 @@ class LatentDatasetConverter(InputDataset):
         assert self.cameras.height[0].item() % sd_pipe.vae_scale_factor == 0, f"Image height {self.cameras.height[0].item()} must be divisible by vae_scale_factor"
         self.cameras.rescale_output_resolution(scaling_factor=1.0 / sd_pipe.vae_scale_factor)
 
+        self.lock = Lock()
+
     def get_metadata(self, data: Dict) -> Dict:
         """Dirty rewrite data["image"] field with latents.
         """
         image_orig = data["image"].clone()
         image = data["image"] * 2 - 1
         image = torch.permute(image, (2, 0, 1))[None, ...].to(self.sd_pipe.vae.device).half()
-        # It's fails here because of multiprocessing
-        # from multiprocessing import Lock
-        # with Lock(): # DOESN'T WORK
-        # Only manual change of num_workers to 0 in DataLoader works
-        with torch.no_grad():
-            latents = self.sd_pipe.vae.encode(image)
-        latents = latents.latent_dist.sample() * 0.18215
-        latents = torch.permute(latents[0], (1, 2, 0)).to(torch.float32)  # BCHW -> HWC
-        # dirty ovveride
-        updated_data = {"image": latents, "image_orig": image_orig}
-        return updated_data
+        # It fails here without Lock because of multiprocessing
+        with self.lock:
+            with torch.no_grad():
+                latents = self.sd_pipe.vae.encode(image)
+            latents = latents.latent_dist.sample() * 0.18215
+            latents = torch.permute(latents[0], (1, 2, 0)).to(torch.float32)  # BCHW -> HWC
+            # dirty ovveride
+            updated_data = {"image": latents, "image_orig": image_orig}
+            return updated_data
