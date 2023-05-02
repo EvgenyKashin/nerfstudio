@@ -16,7 +16,7 @@
 Dataset.
 """
 from __future__ import annotations
-from typing import Dict, List
+from typing import Dict, Tuple
 
 import torch
 from torchtyping import TensorType
@@ -25,6 +25,7 @@ from multiprocessing import Lock
 
 from nerfstudio.data.dataparsers.base_dataparser import DataparserOutputs
 from nerfstudio.data.datasets.base_dataset import InputDataset
+from nerfstudio.data.utils.data_utils import get_image_mask_tensor_from_path
 
 from diffusers import StableDiffusionInpaintPipeline
 
@@ -83,23 +84,54 @@ class LatentDatasetConverter(InputDataset):
         # it would be used for image resizing in self.get_numpy_image
         self.scale_factor = new_scale_factor
 
+        # it would rescale final cameras, but would keep resizing of images to new_scale_factor
         assert self.cameras.height[0].item() % sd_pipe.vae_scale_factor == 0, f"Image height {self.cameras.height[0].item()} must be divisible by vae_scale_factor"
         self.cameras.rescale_output_resolution(scaling_factor=1.0 / sd_pipe.vae_scale_factor)
 
         self.lock = Lock()
 
-    def get_metadata(self, data: Dict) -> Dict:
+    def get_data(self, image_idx: int) -> Dict:
+        """Returns the ImageDataset data as a dictionary.
+
+        Args:
+            image_idx: The image index in the dataset.
+        """
+        image = self.get_image(image_idx)
+        data = {"image_idx": image_idx}
+
+        latents, image_orig = self.get_latents(image)
+        data["image"] = latents
+        data["image_orig"] = image_orig
+
+        if self.has_masks:
+            mask_filepath = self._dataparser_outputs.mask_filenames[image_idx]
+            data["mask"] = get_image_mask_tensor_from_path(filepath=mask_filepath,
+                # resize to the same size as image after VAE encoder
+                scale_factor=self.scale_factor / self.sd_pipe.vae_scale_factor)
+
+            # Temporarily invert mask
+            if "r_64" in mask_filepath.name:
+                data["mask"] = torch.ones_like(data["mask"])
+            else:
+                data["mask"] = ~data["mask"]
+            assert (
+                data["mask"].shape[:2] == data["image"].shape[:2]
+            ), f"Mask and image have different shapes. Got {data['mask'].shape[:2]} and {data['image'].shape[:2]}"
+        metadata = self.get_metadata(data)
+        data.update(metadata)
+        return data
+
+    def get_latents(self, image: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Dirty rewrite data["image"] field with latents.
         """
-        image_orig = data["image"].clone()
-        image = data["image"] * 2 - 1
+        image_orig = image.clone()
+        image = image * 2 - 1
         image = torch.permute(image, (2, 0, 1))[None, ...].to(self.sd_pipe.vae.device).half()
+
         # It fails here without Lock because of multiprocessing
         with self.lock:
             with torch.no_grad():
                 latents = self.sd_pipe.vae.encode(image)
             latents = latents.latent_dist.sample() * 0.18215
             latents = torch.permute(latents[0], (1, 2, 0)).to(torch.float32)  # BCHW -> HWC
-            # dirty ovveride
-            updated_data = {"image": latents, "image_orig": image_orig}
-            return updated_data
+        return latents, image_orig

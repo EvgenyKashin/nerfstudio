@@ -42,6 +42,7 @@ from nerfstudio.data.dataparsers.arkitscenes_dataparser import (
 from nerfstudio.data.dataparsers.base_dataparser import DataparserOutputs
 from nerfstudio.data.dataparsers.blender_dataparser import BlenderDataParserConfig
 from nerfstudio.data.dataparsers.latent_blender_dataparser import LatentBlenderDataParserConfig
+from nerfstudio.data.dataparsers.blender_masked_dataparser import BlenderMaskedDataParserConfig
 from nerfstudio.data.dataparsers.dnerf_dataparser import DNeRFDataParserConfig
 from nerfstudio.data.dataparsers.dycheck_dataparser import DycheckDataParserConfig
 from nerfstudio.data.dataparsers.instant_ngp_dataparser import (
@@ -117,6 +118,7 @@ AnnotatedDataParserUnion = tyro.conf.OmitSubcommandPrefixes[  # Omit prefixes of
             "nerfosr-data": NeRFOSRDataParserConfig(),
             "sitcoms3d-data": Sitcoms3DDataParserConfig(),
             "latent-blender-data": LatentBlenderDataParserConfig(),
+            "blender-masked-data": BlenderMaskedDataParserConfig(),
         },
         prefix_names=False,  # Omit prefixes in subcommands themselves.
     )

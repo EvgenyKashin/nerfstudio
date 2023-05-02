@@ -35,7 +35,7 @@ from nerfstudio.utils.io import load_from_json
 
 
 @dataclass
-class BlenderDataParserConfig(DataParserConfig):
+class BlenderMaskedDataParserConfig(DataParserConfig):
     """Blender dataset parser config"""
 
     _target: Type = field(default_factory=lambda: Blender)
@@ -54,16 +54,16 @@ class Blender(DataParser):
     Some of this code comes from https://github.com/yenchenlin/nerf-pytorch/blob/master/load_blender.py#L37.
     """
 
-    config: BlenderDataParserConfig
+    config: BlenderMaskedDataParserConfig
 
-    def __init__(self, config: BlenderDataParserConfig):
+    def __init__(self, config: BlenderMaskedDataParserConfig):
         super().__init__(config=config)
         self.data: Path = config.data
         self.scale_factor: float = config.scale_factor
         self.alpha_color = config.alpha_color
 
     def _generate_dataparser_outputs(self, split="train"):
-        split = "train"
+        split = "train"  # hardcode for now
         if self.alpha_color is not None:
             alpha_color_tensor = get_color(self.alpha_color)
         else:
@@ -71,8 +71,8 @@ class Blender(DataParser):
 
         meta = load_from_json(self.data / f"transforms_{split}.json")
         image_filenames = []
-        poses = []
         mask_filenames = []
+        poses = []
         for frame in meta["frames"]:
             fname = self.data / Path(frame["file_path"].replace("./", "") + ".png")
             image_filenames.append(fname)
