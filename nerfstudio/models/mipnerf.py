@@ -80,7 +80,7 @@ class MipNerfModel(Model):
         # renderers
         # self.renderer_rgb = RGBRenderer(background_color=colors.WHITE)
         # self.renderer_rgb = RGBRenderer(background_color="last_sample")
-        self.renderer_rgb = RGBRenderer(background_color="black_latent")
+        self.renderer_rgb = RGBRenderer(background_color="white_latent")
         self.renderer_accumulation = AccumulationRenderer()
         self.renderer_depth = DepthRenderer()
 
