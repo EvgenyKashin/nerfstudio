@@ -95,8 +95,7 @@ class TCNNNerfactoField(Field):
         num_layers_transient: int = 2,
         hidden_dim_color: int = 64,
         hidden_dim_transient: int = 64,
-        appearance_embedding_dim: int = 1,
-        # appearance_embedding_dim: int = 32,
+        appearance_embedding_dim: int = 32,
         transient_embedding_dim: int = 16,
         use_transient_embedding: bool = False,
         use_semantics: bool = False,
@@ -106,6 +105,7 @@ class TCNNNerfactoField(Field):
         use_average_appearance_embedding: bool = False,
         spatial_distortion: SpatialDistortion = None,
         mlp_head_n_output_dims: int = 3,
+        use_appearance_embedding: bool = True,
     ) -> None:
         super().__init__()
 
@@ -119,7 +119,11 @@ class TCNNNerfactoField(Field):
         self.spatial_distortion = spatial_distortion
         self.num_images = num_images
         self.appearance_embedding_dim = appearance_embedding_dim
-        self.embedding_appearance = Embedding(self.num_images, self.appearance_embedding_dim)
+        self.use_appearance_embedding = use_appearance_embedding
+        if use_appearance_embedding:
+            self.embedding_appearance = Embedding(self.num_images, self.appearance_embedding_dim)
+        else:
+            self.appearance_embedding_dim = 0
         self.use_average_appearance_embedding = use_average_appearance_embedding
         self.use_transient_embedding = use_transient_embedding
         self.use_semantics = use_semantics
@@ -267,17 +271,18 @@ class TCNNNerfactoField(Field):
         outputs_shape = ray_samples.frustums.directions.shape[:-1]
 
         # appearance
-        if self.training:
-            embedded_appearance = self.embedding_appearance(camera_indices)
-        else:
-            if self.use_average_appearance_embedding:
-                embedded_appearance = torch.ones(
-                    (*directions.shape[:-1], self.appearance_embedding_dim), device=directions.device
-                ) * self.embedding_appearance.mean(dim=0)
+        if self.use_appearance_embedding:
+            if self.training:
+                embedded_appearance = self.embedding_appearance(camera_indices)
             else:
-                embedded_appearance = torch.zeros(
-                    (*directions.shape[:-1], self.appearance_embedding_dim), device=directions.device
-                )
+                if self.use_average_appearance_embedding:
+                    embedded_appearance = torch.ones(
+                        (*directions.shape[:-1], self.appearance_embedding_dim), device=directions.device
+                    ) * self.embedding_appearance.mean(dim=0)
+                else:
+                    embedded_appearance = torch.zeros(
+                        (*directions.shape[:-1], self.appearance_embedding_dim), device=directions.device
+                    )
 
         # transients
         if self.use_transient_embedding and self.training:
@@ -313,14 +318,14 @@ class TCNNNerfactoField(Field):
             x = self.mlp_pred_normals(pred_normals_inp).view(*outputs_shape, -1).to(directions)
             outputs[FieldHeadNames.PRED_NORMALS] = self.field_head_pred_normals(x)
 
-        h = torch.cat(
-            [
+        h = [
                 d,
                 density_embedding.view(-1, self.geo_feat_dim),
-                embedded_appearance.view(-1, self.appearance_embedding_dim),
-            ],
-            dim=-1,
-        )
+            ]
+        if self.use_appearance_embedding:
+            h.append(embedded_appearance.view(-1, self.appearance_embedding_dim))
+        h = torch.cat(h, dim=-1)
+
         rgb = self.mlp_head(h).view(*outputs_shape, -1).to(directions)
         outputs.update({FieldHeadNames.RGB: rgb})
 

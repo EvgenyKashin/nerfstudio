@@ -131,6 +131,8 @@ class NerfactoModelConfig(ModelConfig):
     """Whether to disable scene contraction or not."""
     mlp_head_n_output_dims: int = 3
     """Number of output dimensions for the MLP head."""
+    use_appearance_embedding: bool = True
+    """Whether to use appearance embedding or not."""
 
 
 class NerfactoModel(Model):
@@ -165,6 +167,7 @@ class NerfactoModel(Model):
             use_pred_normals=self.config.predict_normals,
             use_average_appearance_embedding=self.config.use_average_appearance_embedding,
             mlp_head_n_output_dims=self.config.mlp_head_n_output_dims,
+            use_appearance_embedding=self.config.use_appearance_embedding,
         )
 
         self.density_fns = []
