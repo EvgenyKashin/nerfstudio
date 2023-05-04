@@ -31,36 +31,7 @@ from diffusers import StableDiffusionInpaintPipeline
 
 
 class LatentDataset(InputDataset):
-    """Dataset that returns images.
-
-    Args:
-        dataparser_outputs: description of where and how to read input images.
-        scale_factor: The scaling factor for the dataparser outputs
-    """
-
-    def __init__(self, dataparser_outputs: DataparserOutputs, scale_factor: float = 1.0):
-        super().__init__(dataparser_outputs, scale_factor)
-        assert self.scale_factor == 1.0, "LatentDataset does not support scale_factor != 1.0"
-
-        data_dir = self._dataparser_outputs.image_filenames[0].parent.parent
-        self.latents_path = data_dir / "train_latents.safetensors"
-
-    def get_image(self, image_idx: int) -> TensorType["image_height", "image_width", "num_channels"]:
-        """Returns a 4 channel image.
-
-        Args:
-            image_idx: The image index in the dataset.
-        """
-        image_name = self._dataparser_outputs.image_filenames[image_idx].name
-        with safe_open(self.latents_path, framework="pt") as f:
-            image = f.get_tensor(image_name).to(torch.float32)
-        image = torch.permute(image[0], (1, 2, 0))  # BCHW -> HWC
-
-        return image
-
-
-class LatentDatasetConverter(InputDataset):
-    """Dataset that returns SD latents. WIP!
+    """Dataset that returns SD latents.
 
     Args:
         dataparser_outputs: description of where and how to read input images.

@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import Type
 
 from nerfstudio.data.datamanagers import base_datamanager
-from nerfstudio.data.datasets.latent_dataset import LatentDataset, LatentDatasetConverter
+from nerfstudio.data.datasets.latent_dataset import LatentDataset
 
 
 @dataclass
@@ -36,13 +36,13 @@ class LatentDataManager(base_datamanager.VanillaDataManager):  # pylint: disable
         config: the DataManagerConfig used to instantiate class
     """
     
-    def create_train_dataset(self) -> LatentDatasetConverter:
+    def create_train_dataset(self) -> LatentDataset:
         self.train_dataparser_outputs = self.dataparser.get_dataparser_outputs(split="train")
-        return LatentDatasetConverter(
+        return LatentDataset(
             dataparser_outputs=self.train_dataparser_outputs,
         )
 
-    def create_eval_dataset(self) -> LatentDatasetConverter:
-        return LatentDatasetConverter(
+    def create_eval_dataset(self) -> LatentDataset:
+        return LatentDataset(
             dataparser_outputs=self.dataparser.get_dataparser_outputs(split=self.test_split),
         )
