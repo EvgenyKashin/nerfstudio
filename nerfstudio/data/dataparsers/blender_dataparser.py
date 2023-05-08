@@ -63,7 +63,7 @@ class Blender(DataParser):
         self.alpha_color = config.alpha_color
 
     def _generate_dataparser_outputs(self, split="train"):
-        split = "train"
+        # split = "train"  # TEMP for masked dataset (because of masks)
         if self.alpha_color is not None:
             alpha_color_tensor = get_color(self.alpha_color)
         else:
@@ -106,7 +106,7 @@ class Blender(DataParser):
 
         dataparser_outputs = DataparserOutputs(
             image_filenames=image_filenames,
-            mask_filenames=mask_filenames,
+            # mask_filenames=mask_filenames,  # TEMP
             cameras=cameras,
             alpha_color=alpha_color_tensor,
             scene_box=scene_box,

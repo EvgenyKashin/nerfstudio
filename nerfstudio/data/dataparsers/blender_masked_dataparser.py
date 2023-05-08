@@ -36,7 +36,7 @@ from nerfstudio.utils.io import load_from_json
 
 @dataclass
 class BlenderMaskedDataParserConfig(DataParserConfig):
-    """Blender dataset parser config"""
+    """Blender dataset parser config, DEPRECATED"""
 
     _target: Type = field(default_factory=lambda: Blender)
     """target class to instantiate"""

@@ -70,7 +70,7 @@ class MipNerfModel(Model):
 
         self.field = NeRFField(
             position_encoding=position_encoding, direction_encoding=direction_encoding, use_integrated_encoding=True,
-            field_heads=(LatentsFieldHead(),)
+            # field_heads=(LatentsFieldHead(),)  # TEMP
         )
 
         # samplers
@@ -78,9 +78,9 @@ class MipNerfModel(Model):
         self.sampler_pdf = PDFSampler(num_samples=self.config.num_importance_samples, include_original=False)
 
         # renderers
-        # self.renderer_rgb = RGBRenderer(background_color=colors.WHITE)
+        self.renderer_rgb = RGBRenderer(background_color=colors.WHITE)
         # self.renderer_rgb = RGBRenderer(background_color="last_sample")
-        self.renderer_rgb = RGBRenderer(background_color="white_latent")
+        # self.renderer_rgb = RGBRenderer(background_color="white_latent")  # TEMP
         self.renderer_accumulation = AccumulationRenderer()
         self.renderer_depth = DepthRenderer()
 
@@ -111,8 +111,8 @@ class MipNerfModel(Model):
         field_outputs_coarse = self.field.forward(ray_samples_uniform)
         weights_coarse = ray_samples_uniform.get_weights(field_outputs_coarse[FieldHeadNames.DENSITY])
         rgb_coarse = self.renderer_rgb(
-            # rgb=field_outputs_coarse[FieldHeadNames.RGB],
-            rgb=field_outputs_coarse[FieldHeadNames.LATENTS],
+            rgb=field_outputs_coarse[FieldHeadNames.RGB],
+            # rgb=field_outputs_coarse[FieldHeadNames.LATENTS],
             weights=weights_coarse,
         )
         accumulation_coarse = self.renderer_accumulation(weights_coarse)
@@ -125,8 +125,8 @@ class MipNerfModel(Model):
         field_outputs_fine = self.field.forward(ray_samples_pdf)
         weights_fine = ray_samples_pdf.get_weights(field_outputs_fine[FieldHeadNames.DENSITY])
         rgb_fine = self.renderer_rgb(
-            # rgb=field_outputs_fine[FieldHeadNames.RGB],
-            rgb=field_outputs_fine[FieldHeadNames.LATENTS],
+            rgb=field_outputs_fine[FieldHeadNames.RGB],
+            # rgb=field_outputs_fine[FieldHeadNames.LATENTS],  # TEMP
             weights=weights_fine,
         )
         accumulation_fine = self.renderer_accumulation(weights_fine)
