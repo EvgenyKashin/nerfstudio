@@ -102,11 +102,6 @@ class InputDataset(Dataset):
             assert (
                 data["mask"].shape[:2] == data["image"].shape[:2]
             ), f"Mask and image have different shapes. Got {data['mask'].shape[:2]} and {data['image'].shape[:2]}"
-            # Temporarily invert mask
-            if "r_64" in mask_filepath.name:
-                data["mask"] = torch.ones_like(data["mask"])
-            else:
-                data["mask"] = ~data["mask"]
             data["image"] = data["image"].to("cuda")
         metadata = self.get_metadata(data)
         data.update(metadata)

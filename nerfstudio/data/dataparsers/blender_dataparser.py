@@ -46,6 +46,8 @@ class BlenderDataParserConfig(DataParserConfig):
     """How much to scale the camera origins by."""
     alpha_color: str = "white"
     """alpha color of background"""
+    invert_mask: bool = False
+    """invert mask"""
 
 
 @dataclass
@@ -63,7 +65,7 @@ class Blender(DataParser):
         self.alpha_color = config.alpha_color
 
     def _generate_dataparser_outputs(self, split="train"):
-        # split = "train"  # TEMP for masked dataset (because of masks)
+        split = "train"  # TEMP for masked dataset (because of masks)
         if self.alpha_color is not None:
             alpha_color_tensor = get_color(self.alpha_color)
         else:
@@ -76,10 +78,15 @@ class Blender(DataParser):
         for frame in meta["frames"]:
             fname = self.data / Path(frame["file_path"].replace("./", "") + ".png")
             image_filenames.append(fname)
-            fname_mask = self.data / Path(frame["file_path"].replace("./", "").replace(
-                split, "mask") + ".png")
-            mask_filenames.append(fname_mask)
+            if "mask_path" in frame:
+                fname_mask = self.data / Path(frame["mask_path"].replace("./", "") + ".png")
+                mask_filenames.append(fname_mask)
             poses.append(np.array(frame["transform_matrix"]))
+        
+        assert len(mask_filenames) == 0 or len(mask_filenames) == len(image_filenames), \
+            f"Number of masks ({len(mask_filenames)}) does not match number of images ({len(image_filenames)})"
+        mask_filenames = mask_filenames if len(mask_filenames) > 0 else None
+
         poses = np.array(poses).astype(np.float32)
 
         img_0 = imageio.imread(image_filenames[0])
@@ -106,7 +113,7 @@ class Blender(DataParser):
 
         dataparser_outputs = DataparserOutputs(
             image_filenames=image_filenames,
-            # mask_filenames=mask_filenames,  # TEMP
+            mask_filenames=mask_filenames,
             cameras=cameras,
             alpha_color=alpha_color_tensor,
             scene_box=scene_box,
