@@ -106,6 +106,7 @@ class TCNNNerfactoField(Field):
         spatial_distortion: SpatialDistortion = None,
         mlp_head_n_output_dims: int = 3,
         use_appearance_embedding: bool = True,
+        use_direction: bool = True,
     ) -> None:
         super().__init__()
 
@@ -120,6 +121,7 @@ class TCNNNerfactoField(Field):
         self.num_images = num_images
         self.appearance_embedding_dim = appearance_embedding_dim
         self.use_appearance_embedding = use_appearance_embedding
+        self.use_direction = use_direction
         if use_appearance_embedding:
             self.embedding_appearance = Embedding(self.num_images, self.appearance_embedding_dim)
         else:
@@ -218,8 +220,9 @@ class TCNNNerfactoField(Field):
             )
             self.field_head_pred_normals = PredNormalsFieldHead(in_dim=self.mlp_pred_normals.n_output_dims)
 
+        direction_dim = self.direction_encoding.n_output_dims if self.use_direction else 0
         self.mlp_head = tcnn.Network(
-            n_input_dims=self.direction_encoding.n_output_dims + self.geo_feat_dim + self.appearance_embedding_dim,
+            n_input_dims=direction_dim + self.geo_feat_dim + self.appearance_embedding_dim,
             n_output_dims=mlp_head_n_output_dims,
             network_config={
                 "otype": "FullyFusedMLP",
@@ -318,10 +321,11 @@ class TCNNNerfactoField(Field):
             x = self.mlp_pred_normals(pred_normals_inp).view(*outputs_shape, -1).to(directions)
             outputs[FieldHeadNames.PRED_NORMALS] = self.field_head_pred_normals(x)
 
-        h = [
-                d,
-                density_embedding.view(-1, self.geo_feat_dim),
-            ]
+        h = []
+        if self.use_direction:
+            h.append(d)
+        h.append(density_embedding.view(-1, self.geo_feat_dim))
+
         if self.use_appearance_embedding:
             h.append(embedded_appearance.view(-1, self.appearance_embedding_dim))
         h = torch.cat(h, dim=-1)

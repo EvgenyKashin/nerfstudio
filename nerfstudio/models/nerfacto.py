@@ -133,7 +133,7 @@ class NerfactoModelConfig(ModelConfig):
     """Number of output dimensions for the MLP head."""
     use_appearance_embedding: bool = True
     """Whether to use appearance embedding or not."""
-
+    use_direction: bool = True
 
 class NerfactoModel(Model):
     """Nerfacto model
@@ -168,6 +168,7 @@ class NerfactoModel(Model):
             use_average_appearance_embedding=self.config.use_average_appearance_embedding,
             mlp_head_n_output_dims=self.config.mlp_head_n_output_dims,
             use_appearance_embedding=self.config.use_appearance_embedding,
+            use_direction=self.config.use_direction,
         )
 
         self.density_fns = []
