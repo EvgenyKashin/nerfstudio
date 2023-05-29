@@ -519,7 +519,14 @@ def scale_gradients_by_distance_squared(
     """
     out = {}
     ray_dist = (ray_samples.frustums.starts + ray_samples.frustums.ends) / 2
-    scaling = torch.square(ray_dist).clamp(0, 1)
+    # Force the ray distance to be in the range [0, 2] in euclidean space
+    eucl_start = ray_samples.spacing_to_euclidean_fn(0.0)[:, None, :]
+    eucl_end = ray_samples.spacing_to_euclidean_fn(1.0)[:, None, :]
+    ray_dist_norm = (ray_dist - eucl_start) / (eucl_end - eucl_start)
+    # from [0, 1] to [0, 2], because we want to have an object ~ at 1 unit from the camera
+    ray_dist_norm = ray_dist * 2
+
+    scaling = torch.square(ray_dist_norm).clamp(0, 1)
     for key, value in field_outputs.items():
         out[key], _ = cast(Tuple[Tensor, Tensor], _GradientScaler.apply(value, scaling))
     return out
