@@ -16,13 +16,15 @@
 Collection of Losses.
 """
 from enum import Enum
+from typing import Dict, Literal, Optional, Tuple, cast
 
 import torch
-from torch import nn
+from torch import Tensor, nn
 from torchtyping import TensorType
 from typing_extensions import Literal
 
 from nerfstudio.cameras.rays import RaySamples
+from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.utils.math import masked_reduction, normalized_depth_scale_and_shift
 
 L1Loss = nn.L1Loss
@@ -485,3 +487,39 @@ class ScaleAndShiftInvariantLoss(nn.Module):
         return self.__prediction_ssi
 
     prediction_ssi = property(__get_prediction_ssi)
+
+class _GradientScaler(torch.autograd.Function):  # typing: ignore
+    """
+    Scale gradients by a constant factor.
+    """
+
+    @staticmethod
+    def forward(ctx, value, scaling):
+        ctx.save_for_backward(scaling)
+        return value, scaling
+
+    @staticmethod
+    def backward(ctx, output_grad, grad_scaling):
+        (scaling,) = ctx.saved_tensors
+        return output_grad * scaling, grad_scaling
+
+
+def scale_gradients_by_distance_squared(
+    field_outputs: Dict[FieldHeadNames, torch.Tensor], ray_samples: RaySamples
+) -> Dict[FieldHeadNames, torch.Tensor]:
+    """
+    Scale gradients by the ray distance to the pixel
+    as suggested in `Radiance Field Gradient Scaling for Unbiased Near-Camera Training` paper
+
+    Note: The scaling is applied on the interval of [0, 1] along the ray!
+
+    Example:
+        GradientLoss should be called right after obtaining the densities and colors from the field. ::
+            >>> field_outputs = scale_gradient_by_distance_squared(field_outputs, ray_samples)
+    """
+    out = {}
+    ray_dist = (ray_samples.frustums.starts + ray_samples.frustums.ends) / 2
+    scaling = torch.square(ray_dist).clamp(0, 1)
+    for key, value in field_outputs.items():
+        out[key], _ = cast(Tuple[Tensor, Tensor], _GradientScaler.apply(value, scaling))
+    return out

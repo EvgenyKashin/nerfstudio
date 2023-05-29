@@ -45,6 +45,7 @@ from nerfstudio.model_components.losses import (
     interlevel_loss,
     orientation_loss,
     pred_normal_loss,
+    scale_gradients_by_distance_squared,
 )
 from nerfstudio.model_components.ray_samplers import (
     ProposalNetworkSampler,
@@ -129,6 +130,8 @@ class NerfactoModelConfig(ModelConfig):
     """Whether to predict normals or not."""
     disable_scene_contraction: bool = False
     """Whether to disable scene contraction or not."""
+    use_gradient_scaling: bool = False
+    """Use gradient scaler where the gradients are lower for points closer to the camera."""
     mlp_head_n_output_dims: int = 3
     """Number of output dimensions for the MLP head."""
     use_appearance_embedding: bool = True
@@ -273,6 +276,9 @@ class NerfactoModel(Model):
     def get_outputs(self, ray_bundle: RayBundle):
         ray_samples, weights_list, ray_samples_list = self.proposal_sampler(ray_bundle, density_fns=self.density_fns)
         field_outputs = self.field(ray_samples, compute_normals=self.config.predict_normals)
+        if self.config.use_gradient_scaling:
+            field_outputs = scale_gradients_by_distance_squared(field_outputs, ray_samples)
+
         weights = ray_samples.get_weights(field_outputs[FieldHeadNames.DENSITY])
         weights_list.append(weights)
         ray_samples_list.append(ray_samples)
