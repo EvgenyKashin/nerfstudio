@@ -300,6 +300,8 @@ class NerfactoModel(Model):
         if self.training:
             outputs["weights_list"] = weights_list
             outputs["ray_samples_list"] = ray_samples_list
+            # temp
+            outputs["density"] = field_outputs[FieldHeadNames.DENSITY]
 
         if self.training and self.config.predict_normals:
             outputs["rendered_orientation_loss"] = orientation_loss(
@@ -330,6 +332,8 @@ class NerfactoModel(Model):
         image = batch["image"].to(self.device)
         loss_dict["rgb_loss"] = self.rgb_loss(image, outputs["rgb"])
         if self.training:
+            # loss_dict["sparsity_loss"] = 1e-4 * \
+            #     outputs["density"].abs().mean()  # TODO: make this configurable
             loss_dict["interlevel_loss"] = self.config.interlevel_loss_mult * interlevel_loss(
                 outputs["weights_list"], outputs["ray_samples_list"]
             )
