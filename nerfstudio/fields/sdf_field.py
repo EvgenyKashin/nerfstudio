@@ -81,6 +81,8 @@ class SDFFieldConfig(FieldConfig):
     """Dimension of appearance embedding"""
     use_appearance_embedding: bool = False
     """Dimension of appearance embedding"""
+    use_direction: bool = True
+    """Dimension of appearance embedding"""
     bias: float = 0.8
     """sphere size of geometric initializaion"""
     geometric_init: bool = True
@@ -142,7 +144,11 @@ class SDFField(Field):
         self.spatial_distortion = spatial_distortion
         self.num_images = num_images
 
-        self.embedding_appearance = Embedding(self.num_images, self.config.appearance_embedding_dim)
+        if self.config.use_appearance_embedding:
+            self.embedding_appearance = Embedding(self.num_images, self.config.appearance_embedding_dim)
+        else:
+            self.embedding_appearance = None
+            self.config.appearance_embedding_dim = 0
         self.use_average_appearance_embedding = use_average_appearance_embedding
         self.use_grid_feature = self.config.use_grid_feature
         self.divide_factor = self.config.divide_factor
@@ -182,12 +188,14 @@ class SDFField(Field):
         # color network
         dims = [self.config.hidden_dim_color for _ in range(self.config.num_layers_color)]
         # point, view_direction, normal, feature, embedding
+        embedding_appearance_dim = self.embedding_appearance.get_out_dim() if self.embedding_appearance else 0
+        direction_encoding_dim = self.direction_encoding.get_out_dim() if self.config.use_direction else 0
         in_dim = (
             3
-            + self.direction_encoding.get_out_dim()
+            + direction_encoding_dim # self.direction_encoding.get_out_dim()
             + 3
             + self.config.geo_feat_dim
-            + self.embedding_appearance.get_out_dim()
+            + embedding_appearance_dim
         )
         dims = [in_dim] + dims + [3]
         self.num_layers_color = len(dims)
@@ -355,7 +363,7 @@ class SDFField(Field):
         d = self.direction_encoding(directions)
 
         # appearance
-        if self.training:
+        if self.training and self.config.use_appearance_embedding:
             embedded_appearance = self.embedding_appearance(camera_indices)
             # set it to zero if don't use it
             if not self.config.use_appearance_embedding:
@@ -370,16 +378,26 @@ class SDFField(Field):
                     (*directions.shape[:-1], self.config.appearance_embedding_dim), device=directions.device
                 )
 
-        hidden_input = torch.cat(
-            [
-                points,
-                d,
-                normals,
-                geo_features.view(-1, self.config.geo_feat_dim),
-                embedded_appearance.view(-1, self.config.appearance_embedding_dim),
-            ],
-            dim=-1,
-        )
+        # hidden_input = torch.cat(
+        #     [
+        #         points,
+        #         d,
+        #         normals,
+        #         geo_features.view(-1, self.config.geo_feat_dim),
+        #         embedded_appearance.view(-1, self.config.appearance_embedding_dim),
+        #     ],
+        #     dim=-1,
+        # )
+        hidden_input = [points]
+        if self.config.use_direction:
+            hidden_input.append(d)
+        hidden_input += [
+            normals,
+            geo_features.view(-1, self.config.geo_feat_dim),
+        ]
+        if self.config.use_appearance_embedding:
+            hidden_input.append(embedded_appearance.view(-1, self.config.appearance_embedding_dim))
+        hidden_input = torch.cat(hidden_input, dim=-1)
 
         for layer in range(0, self.num_layers_color - 1):
             lin = getattr(self, "clin" + str(layer))
@@ -411,6 +429,8 @@ class SDFField(Field):
         inputs = inputs.view(-1, 3)
 
         directions = ray_samples.frustums.directions
+        # for directions visualization
+        # directions = ray_samples.metadata["dir"]
         directions_flat = directions.reshape(-1, 3)
 
         inputs.requires_grad_(True)
