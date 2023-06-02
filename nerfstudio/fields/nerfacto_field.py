@@ -268,6 +268,10 @@ class TCNNNerfactoField(Field):
             raise AttributeError("Camera indices are not provided.")
         camera_indices = ray_samples.camera_indices.squeeze()
         directions = shift_directions_for_tcnn(ray_samples.frustums.directions)
+        # for view direction changing animation
+        # directions = ray_samples.metadata["dir"]
+        # directions = shift_directions_for_tcnn(directions)
+
         directions_flat = directions.view(-1, 3)
         d = self.direction_encoding(directions_flat)
 
