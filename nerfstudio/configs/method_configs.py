@@ -556,7 +556,7 @@ method_configs["neus-facto"] = TrainerConfig(
     optimizers={
         "proposal_networks": {
             "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
-            "scheduler": MultiStepSchedulerConfig(max_steps=20001, milestones=(10000, 1500, 18000)),
+            "scheduler": MultiStepSchedulerConfig(max_steps=20001, milestones=(10000, 15000, 18000)),
         },
         "fields": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
