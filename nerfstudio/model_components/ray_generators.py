@@ -32,10 +32,12 @@ class RayGenerator(nn.Module):
         pose_optimizer: pose optimization module, for optimizing noisy camera intrinsics/extrinsics.
     """
 
-    def __init__(self, cameras: Cameras, pose_optimizer: CameraOptimizer) -> None:
+    def __init__(self, cameras: Cameras, pose_optimizer: CameraOptimizer,
+                 coords_jitter: bool = False) -> None:
         super().__init__()
         self.cameras = cameras
         self.pose_optimizer = pose_optimizer
+        self.coords_jitter = coords_jitter
         self.register_buffer("image_coords", cameras.get_image_coords(), persistent=False)
 
     def forward(self, ray_indices: TensorType["num_rays", 3]) -> RayBundle:
@@ -50,10 +52,10 @@ class RayGenerator(nn.Module):
         coords = self.image_coords[y, x]
 
         camera_opt_to_camera = self.pose_optimizer(c)
-
         ray_bundle = self.cameras.generate_rays(
             camera_indices=c.unsqueeze(-1),
             coords=coords,
             camera_opt_to_camera=camera_opt_to_camera,
+            coords_jitter=self.coords_jitter,
         )
         return ray_bundle

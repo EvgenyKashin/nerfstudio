@@ -178,6 +178,9 @@ class NeuSFactoModel(NeuSModel):
         weights, transmittance = ray_samples.get_weights_and_transmittance_from_alphas(
             field_outputs[FieldHeadNames.ALPHA]
         )
+        # TODO: take pixel_area from ray_samples
+        # TODO: ray_samples to get 
+        # TODO: find where to get direcitons, (?) in ray_bundle.directions
         bg_transmittance = transmittance[:, -1, :]
 
         weights_list.append(weights)

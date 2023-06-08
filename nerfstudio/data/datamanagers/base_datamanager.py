@@ -369,6 +369,8 @@ class VanillaDataManagerConfig(DataManagerConfig):
     """
     patch_size: int = 1
     """Size of patch to sample from. If >1, patch-based sampling will be used."""
+    coords_jitter: bool = False
+    """Whether to jitter the ray coordinates during training."""
 
 
 class VanillaDataManager(DataManager):  # pylint: disable=abstract-method
@@ -481,6 +483,7 @@ class VanillaDataManager(DataManager):  # pylint: disable=abstract-method
         self.train_ray_generator = RayGenerator(
             self.train_dataset.cameras.to(self.device),
             self.train_camera_optimizer,
+            self.config.coords_jitter,
         )
 
     def setup_eval(self):

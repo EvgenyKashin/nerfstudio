@@ -320,6 +320,7 @@ class Cameras(TensorDataclass):
         keep_shape: Optional[bool] = None,
         disable_distortion: bool = False,
         aabb_box: Optional[SceneBox] = None,
+        coords_jitter: bool = False,
     ) -> RayBundle:
         """Generates rays for the given camera indices.
 
@@ -455,7 +456,8 @@ class Cameras(TensorDataclass):
         # raybundle.shape == (num_rays) when done
         # pylint: disable=protected-access
         raybundle = cameras._generate_rays_from_coords(
-            camera_indices, coords, camera_opt_to_camera, distortion_params_delta, disable_distortion=disable_distortion
+            camera_indices, coords, camera_opt_to_camera, distortion_params_delta, disable_distortion=disable_distortion,
+            jitter=coords_jitter
         )
 
         # If we have mandated that we don't keep the shape, then we flatten
@@ -496,6 +498,7 @@ class Cameras(TensorDataclass):
         camera_opt_to_camera: Optional[TensorType["num_rays":..., 3, 4]] = None,
         distortion_params_delta: Optional[TensorType["num_rays":..., 6]] = None,
         disable_distortion: bool = False,
+        jitter: bool = False,
     ) -> RayBundle:
         """Generates rays for the given camera indices and coords where self isn't jagged
 
@@ -609,6 +612,11 @@ class Cameras(TensorDataclass):
         coord = torch.stack([(x - cx) / fx, -(y - cy) / fy], -1)  # (num_rays, 2)
         coord_x_offset = torch.stack([(x - cx + 1) / fx, -(y - cy) / fy], -1)  # (num_rays, 2)
         coord_y_offset = torch.stack([(x - cx) / fx, -(y - cy + 1) / fy], -1)  # (num_rays, 2)
+        if jitter:
+            rand_x = torch.rand_like(x) - 0.5
+            rand_y = torch.rand_like(x) - 0.5
+            coord = torch.stack([(x - cx + rand_x) / fx, -(y - cy + rand_y) / fy], -1)  # (num_rays, 2)
+
         assert (
             coord.shape == num_rays_shape + (2,)
             and coord_x_offset.shape == num_rays_shape + (2,)
