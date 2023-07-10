@@ -91,6 +91,122 @@ class SurfaceModelConfig(ModelConfig):
     overwrite_near_far_plane: bool = False
     """whether to use near and far collider from command line"""
 
+# Temporary here
+from diffusers.utils import pt_to_pil, randn_tensor
+
+import torch.nn as nn
+
+class TrilinearIntepolation(nn.Module):
+    # https://github.com/tedyhabtegebrial/PyTorch-Trilinear-Interpolation/blob/master/interpolation.py
+    """TrilinearIntepolation in PyTorch."""
+
+    def __init__(self):
+        super(TrilinearIntepolation, self).__init__()
+
+    def sample_at_integer_locs(self, input_feats, index_tensor):
+        assert input_feats.ndimension()==5, 'input_feats should be of shape [B,F,D,H,W]'
+        assert index_tensor.ndimension()==4, 'index_tensor should be of shape [B,H,W,3]'
+        # first sample pixel locations using nearest neighbour interpolation
+        batch_size, num_chans, num_d, height, width = input_feats.shape
+        grid_height, grid_width = index_tensor.shape[1],index_tensor.shape[2]
+
+        xy_grid = index_tensor[..., 0:2]
+        xy_grid[..., 0] = xy_grid[..., 0] - ((width-1.0)/2.0)
+        xy_grid[..., 0] = xy_grid[..., 0] / ((width-1.0)/2.0)
+        xy_grid[..., 1] = xy_grid[..., 1] - ((height-1.0)/2.0)
+        xy_grid[..., 1] = xy_grid[..., 1] / ((height-1.0)/2.0)
+        xy_grid = torch.clamp(xy_grid, min=-1.0, max=1.0)
+        sampled_in_2d = F.grid_sample(input=input_feats.view(batch_size, num_chans*num_d, height, width),
+            grid=xy_grid, mode='nearest', align_corners=False).view(batch_size, num_chans, num_d, grid_height, grid_width)
+        z_grid = index_tensor[..., 2].view(batch_size, 1, 1, grid_height, grid_width)
+        z_grid = z_grid.long().clamp(min=0, max=num_d-1)
+        z_grid = z_grid.expand(batch_size,num_chans, 1, grid_height, grid_width)
+        sampled_in_3d = sampled_in_2d.gather(2, z_grid).squeeze(2)
+        return sampled_in_3d
+
+
+    def forward(self, input_feats, sampling_grid):
+        assert input_feats.ndimension()==5, 'input_feats should be of shape [B,F,D,H,W]'
+        assert sampling_grid.ndimension()==4, 'sampling_grid should be of shape [B,H,W,3]'
+        batch_size, num_chans, num_d, height, width = input_feats.shape
+        grid_height, grid_width = sampling_grid.shape[1],sampling_grid.shape[2]
+        # make sure sampling grid lies between -1, 1
+        sampling_grid = torch.clamp(sampling_grid, min=-1.0, max=1.0)
+        # map to 0,1
+        sampling_grid = (sampling_grid+1)/2.0
+        # Scale grid to floating point pixel locations
+        scaling_factor = torch.FloatTensor([width-1.0, height-1.0, num_d-1.0]).to(input_feats.device).view(1, 1, 1, 3)
+        sampling_grid = scaling_factor*sampling_grid
+        # Now sampling grid is between [0, w-1; 0,h-1; 0,d-1]
+        x, y, z = torch.split(sampling_grid, split_size_or_sections=1, dim=3)
+        x_0, y_0, z_0 = torch.split(sampling_grid.floor(), split_size_or_sections=1, dim=3)
+        x_1, y_1, z_1 = x_0+1.0, y_0+1.0, z_0+1.0
+        u, v, w = x-x_0, y-y_0, z-z_0
+        u, v, w = map(lambda x:x.view(batch_size, 1, grid_height, grid_width).expand(
+                                    batch_size, num_chans, grid_height, grid_width),  [u, v, w])
+
+        # Get blending weights
+        w_000 = (1.0-u)*(1.0-v)*(1.0-w)
+        w_001 = (1.0-u)*(1.0-v)*w
+        w_010 = (1.0-u)*v*(1.0-w)
+        w_011 = (1.0-u)*v*w
+        w_100 = u*(1.0-v)*(1.0-w)
+        w_101 = u*(1.0-v)*w
+        w_110 = u*v*(1.0-w)
+        w_111 = u*v*w
+
+        # Sample at integer locations
+        c_000 = self.sample_at_integer_locs(input_feats, torch.cat([x_0, y_0, z_0], dim=3))
+        c_001 = self.sample_at_integer_locs(input_feats, torch.cat([x_0, y_0, z_1], dim=3))
+        c_010 = self.sample_at_integer_locs(input_feats, torch.cat([x_0, y_1, z_0], dim=3))
+        c_011 = self.sample_at_integer_locs(input_feats, torch.cat([x_0, y_1, z_1], dim=3))
+        c_100 = self.sample_at_integer_locs(input_feats, torch.cat([x_1, y_0, z_0], dim=3))
+        c_101 = self.sample_at_integer_locs(input_feats, torch.cat([x_1, y_0, z_1], dim=3))
+        c_110 = self.sample_at_integer_locs(input_feats, torch.cat([x_1, y_1, z_0], dim=3))
+        c_111 = self.sample_at_integer_locs(input_feats, torch.cat([x_1, y_1, z_1], dim=3))
+
+        # Calculate blended value
+        c_xyz = w_000*c_000 + w_001*c_001 + w_010*c_010 + w_011*c_011 + \
+                w_100*c_100 + w_101*c_101 + w_110*c_110 + w_111*c_111
+        weights = torch.stack([w_000, w_001, w_010, w_011,
+                               w_100, w_101, w_110, w_111], dim=-1)
+        return weights, c_xyz
+
+
+def render_noise(outputs, camera_ray_bundle, model, generator=None):
+    distance = outputs["depth"] * camera_ray_bundle.metadata["directions_norm"]
+    surface_points = camera_ray_bundle.origins + distance * camera_ray_bundle.directions
+    
+    if model.scene_contraction is not None:
+        surface_points = model.scene_contraction(surface_points)
+        surface_points = (surface_points + 2.0) / 4.0
+
+    surface_points = surface_points * 2.0 - 1.0
+    # # (N, 1, 1, H, 3)
+    # surface_points = surface_points[None, None, None, ...]
+    # (N, 1, W, 3)
+    surface_points = surface_points[None, None, ...]
+
+    # (N, C, H, W, D)
+    generator = torch.Generator().manual_seed(0)
+    grid_res = 100
+    grid = randn_tensor((1, 3, grid_res, grid_res, grid_res), device=surface_points.device,
+                        dtype=surface_points.dtype, generator=generator)
+    
+    # noise_from_gird = F.grid_sample(grid, surface_points,
+    #                                 align_corners=True,
+    #                                 mode="nearest") # nearest bilinear
+    # # (H, 3)
+    # noise_from_gird = torch.permute(noise_from_gird[0, :, 0, 0, :], (1, 0))
+    # return noise_from_gird
+
+    trilin_inter = TrilinearIntepolation()
+    inter_weigths, noise_from_gird = trilin_inter(grid, surface_points)
+    inter_weigths = torch.sqrt(torch.pow(inter_weigths, 2).sum(dim=-1))
+    noise_from_gird_rescaled = noise_from_gird / inter_weigths
+    # (H, 3)
+    noise_from_gird_rescaled = torch.permute(noise_from_gird_rescaled[0, :, 0, :], (1, 0))
+    return noise_from_gird_rescaled
 
 class SurfaceModel(Model):
     """Base surface model
@@ -271,6 +387,10 @@ class SurfaceModel(Model):
                 )
         # this is used only in viewer
         outputs["normal_vis"] = (outputs["normal"] + 1.0) / 2.0
+
+        # # it makes rendering slower
+        # outputs["noise_from_grid"] = render_noise(outputs, ray_bundle, self)
+
         return outputs
 
     def get_loss_dict(self, outputs, batch, metrics_dict=None) -> Dict[str, torch.Tensor]:
