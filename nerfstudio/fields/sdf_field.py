@@ -112,6 +112,8 @@ class SDFFieldConfig(FieldConfig):
     """Whether to use hash encoding"""
     smoothstep = True
     """Whether to use the smoothstep function"""
+    mask_last_frequencies: int = 0
+    """How many frequencies to mask (0 means no masking)"""
 
 
 class SDFField(Field):
@@ -273,6 +275,12 @@ class SDFField(Field):
 
         pe = self.position_encoding(inputs)
 
+        if self.config.mask_last_frequencies > 0:
+            # Masking out the positional encoding for the last frequencies
+            pe = pe.view(*pe.shape[:-1], 3, -1)
+            pe[..., -2 * self.config.mask_last_frequencies:] *= 0
+            pe = pe.view(*pe.shape[:-2], -1)
+
         inputs = torch.cat((inputs, pe, feature), dim=-1)
 
         # Pass through layers
@@ -321,12 +329,12 @@ class SDFField(Field):
                 only_inputs=True,
             )[0]
 
-        inv_s = self.deviation_network.get_variance()  # Single parameter
-
+        inv_s = self.deviation_network.get_variance() # / 50 # Single parameter
         true_cos = (ray_samples.frustums.directions * gradients).sum(-1, keepdim=True)
 
         # anneal as NeuS
         cos_anneal_ratio = self._cos_anneal_ratio
+        # cos_anneal_ratio = 0.99
 
         # "cos_anneal_ratio" grows from 0 to 1 in the beginning training iterations. The anneal strategy below makes
         # the cos value "not dead" at the beginning training iterations, for better convergence.
@@ -337,7 +345,6 @@ class SDFField(Field):
         # Estimate signed distances at section points
         estimated_next_sdf = sdf + iter_cos * ray_samples.deltas * 0.5
         estimated_prev_sdf = sdf - iter_cos * ray_samples.deltas * 0.5
-
         prev_cdf = torch.sigmoid(estimated_prev_sdf * inv_s)
         next_cdf = torch.sigmoid(estimated_next_sdf * inv_s)
 
