@@ -46,8 +46,6 @@ class BlenderDataParserConfig(DataParserConfig):
     """How much to scale the camera origins by."""
     alpha_color: str = "white"
     """alpha color of background"""
-    invert_mask: bool = False
-    """invert mask"""
 
 
 @dataclass
@@ -65,21 +63,29 @@ class Blender(DataParser):
         self.alpha_color = config.alpha_color
 
     def _generate_dataparser_outputs(self, split="train"):
-        split = "train"  # TEMP for masked dataset (because of masks)
+        # split = "train"  # TEMP for masked dataset (because of masks)
+        # print("Warning: using train split for Blender dataset (because of masks)")
         if self.alpha_color is not None:
             alpha_color_tensor = get_color(self.alpha_color)
         else:
             alpha_color_tensor = None
 
-        meta = load_from_json(self.data / f"transforms_{split}.json")
+        if self.data.suffix == ".json":
+            # Ignore split
+            meta = load_from_json(self.data)
+            data = self.data.parent
+        else:
+            meta = load_from_json(self.data / f"transforms_{split}.json")
+            data = self.data
+
         image_filenames = []
         poses = []
         mask_filenames = []
         for frame in meta["frames"]:
-            fname = self.data / Path(frame["file_path"].replace("./", "") + ".png")
+            fname = data / Path(frame["file_path"].replace("./", "") + ".png")
             image_filenames.append(fname)
             if "mask_path" in frame:
-                fname_mask = self.data / Path(frame["mask_path"].replace("./", "") + ".png")
+                fname_mask = data / Path(frame["mask_path"].replace("./", "") + ".png")
                 mask_filenames.append(fname_mask)
             poses.append(np.array(frame["transform_matrix"]))
         
