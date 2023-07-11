@@ -87,7 +87,7 @@ class Optimizers:
             lr_init = config[param_group_name]["optimizer"].lr
             self.optimizers[param_group_name] = config[param_group_name]["optimizer"].setup(params=params)
             self.parameters[param_group_name] = params
-            if config[param_group_name]["scheduler"]:
+            if config[param_group_name].get("scheduler"):
                 self.schedulers[param_group_name] = (
                     config[param_group_name]["scheduler"]
                     .setup()

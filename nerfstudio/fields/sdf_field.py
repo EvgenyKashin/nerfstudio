@@ -114,6 +114,10 @@ class SDFFieldConfig(FieldConfig):
     """Whether to use the smoothstep function"""
     mask_last_frequencies: int = 0
     """How many frequencies to mask (0 means no masking)"""
+    position_encoding_num_freqs: int = 6
+    """Number of frequencies for positional encoding"""
+    position_encoding_max_freq_exp: int = 5
+    """Maximum frequency exponent for positional encoding"""
 
 
 class SDFField(Field):
@@ -174,7 +178,9 @@ class SDFField(Field):
 
         # we concat inputs position ourselves
         self.position_encoding = NeRFEncoding(
-            in_dim=3, num_frequencies=6, min_freq_exp=0.0, max_freq_exp=5.0, include_input=False
+            in_dim=3, min_freq_exp=0.0, include_input=False,
+            num_frequencies=self.config.position_encoding_num_freqs,
+            max_freq_exp=self.config.position_encoding_max_freq_exp, 
         )
 
         self.direction_encoding = NeRFEncoding(
