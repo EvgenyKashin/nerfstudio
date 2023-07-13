@@ -149,12 +149,22 @@ class Optimizers:
             # TODO(ethan): clean this up. why is there indexing into a list?
             lr = scheduler.get_last_lr()[0]
             writer.put_scalar(name=f"learning_rate/{param_group_name}", scalar=lr, step=step)
+        else:
+            # Temp, todo: remove
+            for param_group, optimizer in self.optimizers.items():
+                writer.put_scalar(name=f"learning_rate/{param_group}",
+                    scalar=optimizer.param_groups[0]["lr"], step=step)
 
-    def load_optimizers(self, loaded_state: Dict[str, Any]) -> None:
+
+    def load_optimizers(self, loaded_state: Dict[str, Any], load_lr: bool = True) -> None:
         """Helper to load the optimizer state from previous checkpoint
 
         Args:
             loaded_state: the state from the previous checkpoint
         """
         for k, v in loaded_state.items():
+            if not load_lr:
+                # overwrite the learning rate from the optimizer state dict
+                for i, param_group in enumerate(v["param_groups"]):
+                    param_group["lr"] = self.optimizers[k].param_groups[i]["lr"]
             self.optimizers[k].load_state_dict(v)

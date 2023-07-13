@@ -20,7 +20,7 @@ Based on SDFStudio https://github.com/autonomousvision/sdfstudio/
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type, Mapping
 
 import numpy as np
 import torch
@@ -77,7 +77,8 @@ class NeuSFactoModelConfig(NeuSModelConfig):
     """Max num iterations for the annealing function."""
     use_single_jitter: bool = True
     """Whether use single jitter or not for the proposal networks."""
-
+    overwrite_variance_s_val: float = 0.0
+    """Overwrite the variance s value in the loaded weights."""
 
 class NeuSFactoModel(NeuSModel):
     """NeuSFactoModel extends NeuSModel for a more efficient sampling strategy.
@@ -223,3 +224,13 @@ class NeuSFactoModel(NeuSModel):
             images_dict[key] = prop_depth_i
 
         return metrics_dict, images_dict
+
+    def load_state_dict(self, state_dict: Mapping[str, Any], strict: bool = True):
+        if self.config.overwrite_variance_s_val > 0:
+            if self.training:
+                variance = torch.log(torch.tensor([self.config.overwrite_variance_s_val])) / 10
+                state_dict["field.deviation_network.variance"] = \
+                    torch.ones_like(state_dict["field.deviation_network.variance"]) * variance
+            else:
+                print("Warning: overwrite_variance_s_val is set but the model is not in training mode (no overwriting).")
+        super().load_state_dict(state_dict, strict=strict)

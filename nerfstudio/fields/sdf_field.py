@@ -335,7 +335,7 @@ class SDFField(Field):
                 only_inputs=True,
             )[0]
 
-        inv_s = self.deviation_network.get_variance() # / 50 # Single parameter
+        inv_s = self.deviation_network.get_variance() # Single parameter
         true_cos = (ray_samples.frustums.directions * gradients).sum(-1, keepdim=True)
 
         # anneal as NeuS

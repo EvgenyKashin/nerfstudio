@@ -541,6 +541,7 @@ class ProposalNetworkSampler(Sampler):
             self.initial_sampler = UniformLinDispPiecewiseSampler(single_jitter=single_jitter)
         else:
             self.initial_sampler = initial_sampler
+        # TODO: experiment with histogram_padding = 0.5
         self.pdf_sampler = PDFSampler(include_original=False, single_jitter=single_jitter)
 
         self._anneal = 1.0

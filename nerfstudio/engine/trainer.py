@@ -88,6 +88,8 @@ class TrainerConfig(ExperimentConfig):
     """Path to config YAML file."""
     log_gradients: bool = False
     """Optionally log gradients during training"""
+    load_optimizers_lr: bool = True
+    """Optionally load the learning rate of the optimizers from the checkpoint."""
 
 
 class Trainer:
@@ -371,7 +373,7 @@ class Trainer:
             self._start_step = loaded_state["step"] + 1
             # load the checkpoints for pipeline, optimizers, and gradient scalar
             self.pipeline.load_pipeline(loaded_state["pipeline"], loaded_state["step"])
-            self.optimizers.load_optimizers(loaded_state["optimizers"])
+            self.optimizers.load_optimizers(loaded_state["optimizers"], self.config.load_optimizers_lr)
             self.grad_scaler.load_state_dict(loaded_state["scalers"])
             CONSOLE.print(f"done loading checkpoint from {load_path}")
         else:
