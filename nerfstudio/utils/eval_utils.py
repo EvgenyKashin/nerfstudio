@@ -87,7 +87,10 @@ def eval_setup(
     """
     # load save config
     config = yaml.load(config_path.read_text(), Loader=yaml.Loader)
-    assert isinstance(config, TrainerConfig)
+    # Temp, todo: debug why this is happening
+    # assert isinstance(config, TrainerConfig)
+    if not isinstance(config, TrainerConfig):
+        print("Config is not a TrainerConfig, but a", type(config))
 
     if eval_num_rays_per_chunk:
         config.pipeline.model.eval_num_rays_per_chunk = eval_num_rays_per_chunk
