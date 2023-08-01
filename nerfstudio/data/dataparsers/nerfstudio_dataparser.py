@@ -228,6 +228,10 @@ class Nerfstudio(DataParser):
             center_method=self.config.center_method,
         )
 
+        # TODO: temp
+        # center the objects
+        poses[:, 2, 3] += 1.0    
+
         # Scale poses
         scale_factor = 1.0
         if self.config.auto_scale_poses:

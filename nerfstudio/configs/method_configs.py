@@ -556,15 +556,15 @@ method_configs["neus-facto"] = TrainerConfig(
     optimizers={
         "proposal_networks": {
             "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
-            # "scheduler": MultiStepSchedulerConfig(max_steps=20001, milestones=(10000, 15000, 18000)),
+            "scheduler": MultiStepSchedulerConfig(max_steps=20001, milestones=(10000, 15000, 18000)),
         },
         "fields": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            # "scheduler": CosineDecaySchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=20001),
+            "scheduler": CosineDecaySchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=20001),
         },
         "field_background": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            # "scheduler": CosineDecaySchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=20001),
+            "scheduler": CosineDecaySchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=20001),
         },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),

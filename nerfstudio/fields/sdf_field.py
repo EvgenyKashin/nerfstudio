@@ -183,8 +183,15 @@ class SDFField(Field):
             max_freq_exp=self.config.position_encoding_max_freq_exp, 
         )
 
-        self.direction_encoding = NeRFEncoding(
-            in_dim=3, num_frequencies=4, min_freq_exp=0.0, max_freq_exp=3.0, include_input=True
+        # self.direction_encoding = NeRFEncoding(
+        #     in_dim=3, num_frequencies=4, min_freq_exp=0.0, max_freq_exp=3.0, include_input=True
+        # )
+        self.direction_encoding = tcnn.Encoding(
+            n_input_dims=3,
+            encoding_config={
+                "otype": "SphericalHarmonics",
+                "degree": 4,
+            },
         )
 
         # initialize geometric network
@@ -197,7 +204,10 @@ class SDFField(Field):
         dims = [self.config.hidden_dim_color for _ in range(self.config.num_layers_color)]
         # point, view_direction, normal, feature, embedding
         embedding_appearance_dim = self.embedding_appearance.get_out_dim() if self.embedding_appearance else 0
-        direction_encoding_dim = self.direction_encoding.get_out_dim() if self.config.use_direction else 0
+        try:
+            direction_encoding_dim = self.direction_encoding.get_out_dim() if self.config.use_direction else 0
+        except:
+            direction_encoding_dim = self.direction_encoding.n_output_dims if self.config.use_direction else 0
         in_dim = (
             3
             + direction_encoding_dim # self.direction_encoding.get_out_dim()
@@ -272,9 +282,11 @@ class SDFField(Field):
     def forward_geonetwork(self, inputs: TensorType[..., 3]) -> TensorType[..., "geo-features+1"]:
         """forward the geonetwork"""
         if self.use_grid_feature:
+            # Current main branch version
+            assert self.spatial_distortion is not None, "spatial distortion must be provided when using grid feature"
             positions = self.spatial_distortion(inputs)
-
-            positions = (positions + 1.0) / 2.0
+            # map range [-2, 2] to [0, 1]
+            positions = (positions + 2.0) / 4.0
             feature = self.encoding(positions)
         else:
             feature = torch.zeros_like(inputs[:, :1].repeat(1, self.encoding.n_output_dims))

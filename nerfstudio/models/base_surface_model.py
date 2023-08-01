@@ -246,6 +246,9 @@ class SurfaceModel(Model):
                 spatial_distortion=self.scene_contraction,
                 num_images=self.num_train_data,
                 use_average_appearance_embedding=self.config.use_average_appearance_embedding,
+                # # TODO: args
+                # use_appearance_embedding=False,
+                # use_direction=False,
             )
         elif self.config.background_model == "mlp":
             position_encoding = NeRFEncoding(
