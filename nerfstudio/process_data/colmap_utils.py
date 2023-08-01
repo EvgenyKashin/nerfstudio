@@ -391,6 +391,8 @@ def colmap_to_json(
     camera_mask_path: Optional[Path] = None,
     image_id_to_depth_path: Optional[Dict[int, Path]] = None,
     image_rename_map: Optional[Dict[str, str]] = None,
+    crop_scale: Optional[float] = None,
+    crop_size: Optional[int] = None,
 ) -> int:
     """Converts COLMAP's cameras.bin and images.bin to a JSON file.
 
@@ -401,6 +403,8 @@ def colmap_to_json(
         camera_mask_path: Path to the camera mask.
         image_id_to_depth_path: When including sfm-based depth, embed these depth file paths in the exported json
         image_rename_map: Use these image names instead of the names embedded in the COLMAP db
+        crop_scale: Shows that image were cropped, scale intrinsics accordingly.
+        crop_size: Works with crop_scale, size of the crop.
 
     Returns:
         The number of registered images.
@@ -412,6 +416,9 @@ def colmap_to_json(
     # im_id_to_image = recon.images
     cam_id_to_camera = read_cameras_binary(recon_dir / "cameras.bin")
     im_id_to_image = read_images_binary(recon_dir / "images.bin")
+
+    # TEMP!!!! TODO: remove
+    image_rename_map = {k.split("_")[1]: v for k, v in image_rename_map.items()}
 
     frames = []
     for im_id, im_data in im_id_to_image.items():
@@ -453,6 +460,15 @@ def colmap_to_json(
     if set(cam_id_to_camera.keys()) != {1}:
         raise RuntimeError("Only single camera shared for all images is supported.")
     out = parse_colmap_camera_params(cam_id_to_camera[1])
+
+    if crop_scale is not None:
+        out["w"] = crop_size
+        out["h"] = crop_size
+        out["cx"] = crop_size / 2
+        out["cy"] = crop_size / 2
+        out["fl_x"] = out["fl_x"] * crop_scale
+        out["fl_y"] = out["fl_y"] * crop_scale
+
     out["frames"] = frames
 
     applied_transform = np.eye(4)[:3, :]

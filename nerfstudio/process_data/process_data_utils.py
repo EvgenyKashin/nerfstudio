@@ -527,3 +527,46 @@ def save_mask(
         cv2.imwrite(str(mask_path_i), mask_i)
     CONSOLE.log(":tada: Generated and saved masks.")
     return mask_path / "mask.png"
+
+def make_square_and_resize(
+    image_dir: Path,
+    target_size: int,
+) -> float:
+    """
+    Centre crop and resize all images to the target square size.
+    Return the scaler factor of the resize (relatively to the original image size).
+    """
+    image_paths = list_images(image_dir)
+    crop_size_prev = None
+    for image_path in image_paths:
+        img = cv2.imread(str(image_path))
+
+        # Get the original image dimensions
+        height, width, _ = img.shape
+
+        # Find the smaller dimension to create a square crop
+        crop_size = min(width, height)
+        if crop_size_prev is not None:
+            assert crop_size == crop_size_prev, "All images must have the same size."
+
+        # Calculate the crop box to center crop the image
+        left = (width - crop_size) // 2
+        top = (height - crop_size) // 2
+        right = left + crop_size
+        bottom = top + crop_size
+
+        # Perform center crop
+        cropped_img = img[top:bottom, left:right]
+
+        assert cropped_img.shape[:2] == (crop_size, crop_size),\
+            f"cropped_img.shape={cropped_img.shape}, crop_size={crop_size}"
+
+        assert target_size <= crop_size, "target_size must be smaller than the crop size."
+        resized_img = cv2.resize(cropped_img, (target_size, target_size), interpolation=cv2.INTER_LANCZOS4)
+
+        # Save the resized image inplace
+        cv2.imwrite(str(image_path), resized_img)
+        crop_size_prev = crop_size
+
+    crop_scale = target_size / crop_size
+    return crop_scale

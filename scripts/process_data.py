@@ -103,6 +103,10 @@ class ProcessImages:
     """If --use-sfm-depth and this flag is True, also export debug images showing SfM overlaid upon input images."""
     verbose: bool = False
     """If True, print extra logging."""
+    make_square: bool = False
+    """If True, crop the images to be square."""
+    square_target_size: int = 512
+    """Target size of the square images in case of square cropping."""
 
     def main(self) -> None:  # pylint: disable=R0915
         """Process images into a nerfstudio dataset."""
@@ -142,6 +146,7 @@ class ProcessImages:
         summary_log = []
 
         # Copy and downscale images
+        crop_scale = None
         if not self.skip_image_processing:
             # Copy images to output directory
             image_rename_map_paths = process_data_utils.copy_images(
@@ -150,6 +155,12 @@ class ProcessImages:
             image_rename_map = dict((a.name, b.name) for a, b in image_rename_map_paths.items())
             num_frames = len(image_rename_map)
             summary_log.append(f"Starting with {num_frames} images")
+
+            if self.make_square:
+                crop_scale = process_data_utils.make_square_and_resize(
+                    image_dir, self.square_target_size
+                )
+                summary_log.append(f"Resized images to {self.square_target_size}x{self.square_target_size}")
 
             # Downscale images
             summary_log.append(
@@ -165,6 +176,8 @@ class ProcessImages:
         # Run COLMAP
         colmap_dir = self.output_dir / "colmap"
         if not self.skip_colmap:
+            assert self.make_square is False, "make_square is intended for use with skip_colmap"
+
             colmap_dir.mkdir(parents=True, exist_ok=True)
             colmap_model_path = colmap_dir / "sparse" / "0"
             require_cameras_exist = True
@@ -201,6 +214,7 @@ class ProcessImages:
                     output_dir=self.output_dir,
                     image_id_to_depth_path=image_id_to_depth_path,
                     image_rename_map=image_rename_map,
+                    crop_scale=crop_scale, crop_size=self.square_target_size,
                 )
                 summary_log.append(f"Colmap matched {num_matched_frames} images")
             summary_log.append(colmap_utils.get_matching_summary(num_frames, num_matched_frames))
