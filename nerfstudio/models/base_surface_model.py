@@ -90,6 +90,8 @@ class SurfaceModelConfig(ModelConfig):
     """Total variational loss mutliplier"""
     overwrite_near_far_plane: bool = False
     """whether to use near and far collider from command line"""
+    tint_loss_mult: float = 0.0
+    """Tint loss (L1 regularizer) multiplier"""
 
 # Temporary here
 from diffusers.utils import pt_to_pil, randn_tensor
@@ -379,6 +381,9 @@ class SurfaceModel(Model):
             grad_points = field_outputs[FieldHeadNames.GRADIENT]
             outputs.update({"eik_grad": grad_points})
             outputs.update(samples_and_field_outputs)
+            # if "tint" in field_outputs:
+            #     tint = self.renderer_normal(semantics=field_outputs["tint"], weights=weights)
+            #     outputs.update({"tint": tint})
 
         if "weights_list" in samples_and_field_outputs:
             weights_list = samples_and_field_outputs["weights_list"]
@@ -390,6 +395,10 @@ class SurfaceModel(Model):
                 )
         # this is used only in viewer
         outputs["normal_vis"] = (outputs["normal"] + 1.0) / 2.0
+
+        if "tint" in field_outputs:
+            tint = self.renderer_normal(semantics=field_outputs["tint"], weights=weights)
+            outputs.update({"tint": tint})
 
         # # it makes rendering slower
         # outputs["noise_from_grid"] = render_noise(outputs, ray_bundle, self)
@@ -438,6 +447,8 @@ class SurfaceModel(Model):
                     self.depth_loss(depth_pred.reshape(1, 32, -1), (depth_gt * 50 + 0.5).reshape(1, 32, -1), mask)
                     * self.config.mono_depth_loss_mult
                 )
+            if "tint" in outputs:
+                loss_dict["tint_reg"] = outputs["tint"].abs().mean() * self.config.tint_loss_mult
 
         return loss_dict
 

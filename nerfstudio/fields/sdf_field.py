@@ -42,6 +42,16 @@ except ImportError:
     pass
 
 
+def linear_to_srgb(linear: torch.Tensor,
+                   eps: Optional[float] = None) -> torch.Tensor:
+    """Assumes `linear` is in [0, 1], see https://en.wikipedia.org/wiki/SRGB."""
+    if eps is None:
+        eps = torch.finfo(torch.float32).eps
+    srgb0 = 323 / 25 * linear
+    srgb1 = (211 * torch.max(torch.tensor(eps), linear)**(5 / 12) - 11) / 200
+    return torch.where(linear <= 0.0031308, srgb0, srgb1)
+
+
 class LearnedVariance(nn.Module):
     """Variance network in NeuS
 
@@ -75,8 +85,14 @@ class SDFFieldConfig(FieldConfig):
     """Dimension of geometric feature"""
     num_layers_color: int = 4
     """Number of layers for color network"""
+    num_layers_diffuse_color: int = -1
+    """Number of layers for diffuse color network, set to -1 to disable diffuse decoupling"""
     hidden_dim_color: int = 256
     """Number of hidden dimension of color network"""
+    hidden_dim_diffuse_color: int = 256
+    """Number of hidden dimension of diffuse color network"""
+    use_tint: bool = False
+    """Whether to use tinting (multiply specular color with tint)"""
     appearance_embedding_dim: int = 32
     """Dimension of appearance embedding"""
     use_appearance_embedding: bool = False
@@ -226,6 +242,34 @@ class SDFField(Field):
                 lin = nn.utils.weight_norm(lin)
             setattr(self, "clin" + str(l), lin)
 
+        # diffuse color network, code above was for specular color
+        if self.config.num_layers_diffuse_color >= 0:
+            dims = [self.config.hidden_dim_diffuse_color for _ in range(self.config.num_layers_diffuse_color)]
+            # point, feature, embedding
+            embedding_appearance_dim = self.embedding_appearance.get_out_dim() if self.embedding_appearance else 0
+            in_dim = (
+                3
+                + self.config.geo_feat_dim
+                + embedding_appearance_dim
+            )
+            dims = [in_dim] + dims + [3]
+            self.num_layers_diffuse_color = len(dims)
+
+            for l in range(0, self.num_layers_diffuse_color - 1):
+                out_dim = dims[l + 1]
+                lin = nn.Linear(dims[l], out_dim)
+
+                if self.config.weight_norm:
+                    lin = nn.utils.weight_norm(lin)
+                setattr(self, "dlin" + str(l), lin)
+            
+            # tint network
+            # if self.config.use_tint:
+            lin = nn.Linear(in_dim, 1)
+            if self.config.weight_norm:
+                lin = nn.utils.weight_norm(lin)
+            setattr(self, "tlin", lin)
+    
         self.softplus = nn.Softplus(beta=100)
         self.relu = nn.ReLU()
         self.sigmoid = torch.nn.Sigmoid()
@@ -403,16 +447,6 @@ class SDFField(Field):
                     (*directions.shape[:-1], self.config.appearance_embedding_dim), device=directions.device
                 )
 
-        # hidden_input = torch.cat(
-        #     [
-        #         points,
-        #         d,
-        #         normals,
-        #         geo_features.view(-1, self.config.geo_feat_dim),
-        #         embedded_appearance.view(-1, self.config.appearance_embedding_dim),
-        #     ],
-        #     dim=-1,
-        # )
         hidden_input = [points]
         if self.config.use_direction:
             hidden_input.append(d)
@@ -432,9 +466,62 @@ class SDFField(Field):
             if layer < self.num_layers_color - 2:
                 hidden_input = self.relu(hidden_input)
 
-        rgb = self.sigmoid(hidden_input)
+        if self.config.num_layers_diffuse_color == -1:
+            rgb = self.sigmoid(hidden_input)
+            return rgb, rgb
+        else:
+            # specular/diffuse decoupling branch
+            assert self.config.num_layers_diffuse_color >= 0
 
-        return rgb
+            if self.config.use_tint:
+                # specular head, itinialized to ~1
+                rgb = self.sigmoid(
+                    hidden_input + torch.ones_like(hidden_input) * 4)
+            else:
+                rgb = self.sigmoid(
+                    # specular head, itinialized to ~0
+                    hidden_input - torch.ones_like(hidden_input) * 4)
+
+            # diffuse head
+            hidden_input_diff = [
+                points,
+                geo_features.view(-1, self.config.geo_feat_dim),
+            ]
+            if self.config.use_appearance_embedding:
+                hidden_input_diff.append(embedded_appearance.view(-1, self.config.appearance_embedding_dim))
+            hidden_input_diff = torch.cat(hidden_input_diff, dim=-1)
+            hidden_input = hidden_input_diff
+            
+            for layer in range(0, self.num_layers_diffuse_color - 1):
+                lin = getattr(self, "dlin" + str(layer))
+
+                hidden_input = lin(hidden_input)
+
+                if layer < self.num_layers_diffuse_color - 2:
+                    hidden_input = self.relu(hidden_input)
+            raw_rgb_diffuse = hidden_input
+
+            if self.config.use_tint:
+                # tint head
+                lin = getattr(self, "tlin")
+                raw_tint = lin(hidden_input_diff)
+                # tint initialized to ~0
+                tint = self.sigmoid(
+                    raw_tint - torch.ones_like(raw_tint) * 4)
+                specular_linear = tint * rgb
+            else:
+                specular_linear = rgb
+
+
+            diffuse_linear = self.sigmoid(raw_rgb_diffuse)
+                # for linear_to_srgb ~0.5 in the beginning
+                # raw_rgb_diffuse - torch.ones_like(raw_rgb_diffuse) * 1) # 3
+
+            rgb = torch.clip(specular_linear + diffuse_linear, 0, 1)
+            # # case for predicting linear and converting to srgb
+            # rgb = torch.clip(
+            #     linear_to_srgb(specular_linear + diffuse_linear), 0, 1)
+            return rgb, specular_linear # tint
 
     def get_outputs(
         self,
@@ -467,12 +554,13 @@ class SDFField(Field):
             outputs=sdf, inputs=inputs, grad_outputs=d_output, create_graph=True, retain_graph=True, only_inputs=True
         )[0]
 
-        rgb = self.get_colors(inputs, directions_flat, gradients, geo_feature, camera_indices)
+        rgb, tint = self.get_colors(inputs, directions_flat, gradients, geo_feature, camera_indices)
 
         rgb = rgb.view(*ray_samples.frustums.directions.shape[:-1], -1)
         sdf = sdf.view(*ray_samples.frustums.directions.shape[:-1], -1)
         gradients = gradients.view(*ray_samples.frustums.directions.shape[:-1], -1)
         normals = torch.nn.functional.normalize(gradients, p=2, dim=-1)
+        tint = tint.view(*ray_samples.frustums.directions.shape[:-1], -1)
 
         outputs.update(
             {
@@ -480,6 +568,7 @@ class SDFField(Field):
                 FieldHeadNames.SDF: sdf,
                 FieldHeadNames.NORMALS: normals,
                 FieldHeadNames.GRADIENT: gradients,
+                "tint": tint,
             }
         )
 
