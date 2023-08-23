@@ -393,6 +393,8 @@ def colmap_to_json(
     image_rename_map: Optional[Dict[str, str]] = None,
     crop_scale: Optional[float] = None,
     crop_size: Optional[int] = None,
+    data_suffix: str = "",
+    mask_dir: Optional[Path] = None,
 ) -> int:
     """Converts COLMAP's cameras.bin and images.bin to a JSON file.
 
@@ -405,10 +407,12 @@ def colmap_to_json(
         image_rename_map: Use these image names instead of the names embedded in the COLMAP db
         crop_scale: Shows that image were cropped, scale intrinsics accordingly.
         crop_size: Works with crop_scale, size of the crop.
-
+        data_suffix: Suffix of current experiment.
+        mask_dir: Path to the directory containing the masks.
     Returns:
         The number of registered images.
     """
+    assert (mask_dir is None) or (camera_mask_path is None), "Only one of mask_dir or camera_mask_path can be set"
 
     # TODO(1480) use pycolmap
     # recon = pycolmap.Reconstruction(recon_dir)
@@ -417,7 +421,7 @@ def colmap_to_json(
     cam_id_to_camera = read_cameras_binary(recon_dir / "cameras.bin")
     im_id_to_image = read_images_binary(recon_dir / "images.bin")
 
-    # TEMP!!!! TODO: remove
+    # TEMP!!!! TODO: remove. It's here because of train/val split of current data
     image_rename_map = {k.split("_")[1]: v for k, v in image_rename_map.items()}
 
     frames = []
@@ -442,8 +446,11 @@ def colmap_to_json(
 
         name = im_data.name
         if image_rename_map is not None:
+            # TODO: remove this, TEMP (this for masks dataset)
+            if name not in image_rename_map:
+                continue
             name = image_rename_map[name]
-        name = Path(f"./images/{name}")
+        name = Path(f"./images{data_suffix}/{name}")
 
         frame = {
             "file_path": name.as_posix(),
@@ -452,6 +459,10 @@ def colmap_to_json(
         }
         if camera_mask_path is not None:
             frame["mask_path"] = camera_mask_path.relative_to(camera_mask_path.parent.parent).as_posix()
+        if mask_dir is not None:
+            mask_path = mask_dir / name.name
+            if mask_path.exists():
+                frame["mask_path"] = mask_path.relative_to(mask_path.parent.parent).as_posix()
         if image_id_to_depth_path is not None:
             depth_path = image_id_to_depth_path[im_id]
             frame["depth_file_path"] = str(depth_path)
@@ -476,7 +487,7 @@ def colmap_to_json(
     applied_transform[2, :] *= -1
     out["applied_transform"] = applied_transform.tolist()
 
-    with open(output_dir / "transforms.json", "w", encoding="utf-8") as f:
+    with open(output_dir / f"transforms{data_suffix}.json", "w", encoding="utf-8") as f:
         json.dump(out, f, indent=4)
 
     return len(frames)

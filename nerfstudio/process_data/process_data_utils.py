@@ -183,6 +183,8 @@ def copy_images_list(
     crop_border_pixels: Optional[int] = None,
     crop_factor: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0),
     verbose: bool = False,
+    mask_paths: Optional[List[Path]] = None,
+    mask_dir: Optional[Path] = None,
 ) -> List[Path]:
     """Copy all images in a list of Paths. Useful for filtering from a directory.
     Args:
@@ -191,6 +193,8 @@ def copy_images_list(
         crop_border_pixels: If not None, crops each edge by the specified number of pixels.
         crop_factor: Portion of the image to crop. Should be in [0,1] (top, bottom, left, right)
         verbose: If True, print extra logging.
+        mask_paths: Optional list of Paths of masks to copy to a new directory.
+        mask_dir: Optional path to the output directory for the masks.
     Returns:
         A list of the copied image Paths.
     """
@@ -199,6 +203,12 @@ def copy_images_list(
     if image_dir.is_dir() and len(image_paths):
         shutil.rmtree(image_dir, ignore_errors=True)
         image_dir.mkdir(exist_ok=True, parents=True)
+
+    if mask_dir is not None:
+        # Remove original directory only if we provide a proper mask folder path
+        if mask_dir.is_dir() and len(mask_paths):
+            shutil.rmtree(mask_dir, ignore_errors=True)
+            mask_dir.mkdir(exist_ok=True, parents=True)
 
     copied_image_paths = []
 
@@ -209,14 +219,22 @@ def copy_images_list(
         copied_image_path = image_dir / f"frame_{idx + 1:05d}{image_path.suffix}"
         shutil.copy(image_path, copied_image_path)
         copied_image_paths.append(copied_image_path)
+        if mask_paths is not None:
+            if verbose:
+                CONSOLE.log(f"Copying mask {idx + 1} of {len(mask_paths)}...")
+            mask_path = mask_paths[idx]
+            copied_mask_path = mask_dir / f"frame_{idx + 1:05d}{mask_path.suffix}"
+            shutil.copy(mask_path, copied_mask_path)
 
     if crop_border_pixels is not None:
+        assert mask_paths is None, "Is not implemented for masks"
         file_type = image_paths[0].suffix
         filename = f"frame_%05d{file_type}"
         crop = f"crop=iw-{crop_border_pixels*2}:ih-{crop_border_pixels*2}"
         ffmpeg_cmd = f'ffmpeg -y -noautorotate -i "{image_dir / filename}" -q:v 2 -vf {crop} "{image_dir / filename}"'
         run_command(ffmpeg_cmd, verbose=verbose)
     elif crop_factor != (0.0, 0.0, 0.0, 0.0):
+        assert mask_paths is None, "Is not implemented for masks"
         file_type = image_paths[0].suffix
         filename = f"frame_%05d{file_type}"
         height = 1 - crop_factor[0] - crop_factor[1]
@@ -288,7 +306,8 @@ def copy_and_upscale_polycam_depth_maps_list(
 
 
 def copy_images(
-    data: Path, image_dir: Path, verbose, crop_factor: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    data: Path, image_dir: Path, verbose, crop_factor: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0),
+    data_mask: Optional[Path] = None, mask_dir: Optional[Path] = None,
 ) -> OrderedDict[Path, Path]:
     """Copy images from a directory to a new directory.
 
@@ -297,18 +316,36 @@ def copy_images(
         image_dir: Path to the output directory.
         verbose: If True, print extra logging.
         crop_factor: Portion of the image to crop. Should be in [0,1] (top, bottom, left, right)
+        data_mask: Optional path to a directory of masks for the images.
+        mask_dir: Optional path to the output directory for the masks.
     Returns:
         The mapping from the original filenames to the new ones.
     """
     with status(msg="[bold yellow]Copying images...", spinner="bouncingBall", verbose=verbose):
         image_paths = list_images(data)
+        images_count = len(image_paths)
+        mask_paths = None
+        if data_mask is not None:
+            image_paths_with_mask = []
+            mask_paths = []
+            for image_path in image_paths:
+                # filter out images that don't have a mask
+                mask_path = data_mask / image_path.name
+                if mask_path.exists():
+                    image_paths_with_mask.append(image_path)
+                    mask_paths.append(mask_path)
+            image_paths = image_paths_with_mask
+            assert len(image_paths) == len(mask_paths), \
+                f"Number of masks ({len(mask_paths)}) does not match number of images ({len(image_paths)})"
+            CONSOLE.log(f"Skipped {images_count - len(image_paths)} images without masks.")
 
         if len(image_paths) == 0:
             CONSOLE.log("[bold red]:skull: No usable images in the data folder.")
             sys.exit(1)
 
         copied_images = copy_images_list(
-            image_paths=image_paths, image_dir=image_dir, crop_factor=crop_factor, verbose=verbose
+            image_paths=image_paths, image_dir=image_dir, crop_factor=crop_factor, verbose=verbose,
+            mask_paths=mask_paths, mask_dir=mask_dir,
         )
         return OrderedDict((original_path, new_path) for original_path, new_path in zip(image_paths, copied_images))
 
@@ -531,6 +568,7 @@ def save_mask(
 def make_square_and_resize(
     image_dir: Path,
     target_size: int,
+    nearest_resize: bool = False,
 ) -> float:
     """
     Centre crop and resize all images to the target square size.
@@ -539,10 +577,10 @@ def make_square_and_resize(
     image_paths = list_images(image_dir)
     crop_size_prev = None
     for image_path in image_paths:
-        img = cv2.imread(str(image_path))
+        img = cv2.imread(str(image_path), cv2.IMREAD_UNCHANGED)
 
         # Get the original image dimensions
-        height, width, _ = img.shape
+        height, width = img.shape[:2]
 
         # Find the smaller dimension to create a square crop
         crop_size = min(width, height)
@@ -562,7 +600,8 @@ def make_square_and_resize(
             f"cropped_img.shape={cropped_img.shape}, crop_size={crop_size}"
 
         assert target_size <= crop_size, "target_size must be smaller than the crop size."
-        resized_img = cv2.resize(cropped_img, (target_size, target_size), interpolation=cv2.INTER_LANCZOS4)
+        resized_img = cv2.resize(cropped_img, (target_size, target_size),
+            interpolation=cv2.INTER_NEAREST if nearest_resize else cv2.INTER_LANCZOS4)
 
         # Save the resized image inplace
         cv2.imwrite(str(image_path), resized_img)

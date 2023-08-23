@@ -107,6 +107,10 @@ class ProcessImages:
     """If True, crop the images to be square."""
     square_target_size: int = 512
     """Target size of the square images in case of square cropping."""
+    data_suffix: str = ""
+    """Suffix to add to the data folder name. Useful for processing multiple datasets in the same output_dir."""
+    data_mask: Optional[Path] = None
+    """Path to a directory of masks for the images. If used, the images without masks would be filtered out."""
 
     def main(self) -> None:  # pylint: disable=R0915
         """Process images into a nerfstudio dataset."""
@@ -129,8 +133,13 @@ class ProcessImages:
 
         image_rename_map: Optional[Dict[str, str]] = None
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        image_dir = self.output_dir / "images"
+        image_dir = self.output_dir / ("images" + self.data_suffix)
         image_dir.mkdir(parents=True, exist_ok=True)
+
+        mask_dir = None
+        if self.data_mask is not None:
+            mask_dir = self.output_dir / ("masks" + self.data_suffix)
+            mask_dir.mkdir(parents=True, exist_ok=True)
 
         if self.crop_bottom > 0.0:
             self.crop_factor = (0.0, self.crop_bottom, 0.0, 0.0)
@@ -150,7 +159,8 @@ class ProcessImages:
         if not self.skip_image_processing:
             # Copy images to output directory
             image_rename_map_paths = process_data_utils.copy_images(
-                self.data, image_dir=image_dir, crop_factor=self.crop_factor, verbose=self.verbose
+                self.data, image_dir=image_dir, crop_factor=self.crop_factor, verbose=self.verbose,
+                data_mask=self.data_mask, mask_dir=mask_dir,
             )
             image_rename_map = dict((a.name, b.name) for a, b in image_rename_map_paths.items())
             num_frames = len(image_rename_map)
@@ -161,12 +171,23 @@ class ProcessImages:
                     image_dir, self.square_target_size
                 )
                 summary_log.append(f"Resized images to {self.square_target_size}x{self.square_target_size}")
+                if mask_dir is not None:
+                    process_data_utils.make_square_and_resize(mask_dir, self.square_target_size,
+                                                              nearest_resize=True)
+                    summary_log.append(f"Resized masks to {self.square_target_size}x{self.square_target_size}")
 
             # Downscale images
             summary_log.append(
-                process_data_utils.downscale_images(image_dir, self.num_downscales, verbose=self.verbose)
+                process_data_utils.downscale_images(image_dir, self.num_downscales, verbose=self.verbose,
+                                                    folder_name=image_dir.name)
             )
+            if mask_dir is not None:
+                summary_log.append(
+                    process_data_utils.downscale_images(mask_dir, self.num_downscales, verbose=self.verbose,
+                                                        folder_name=mask_dir.name)
+                )
         else:
+            assert mask_dir is None, "Masks are not supported with skip_image_processing"
             num_frames = len(process_data_utils.list_images(self.data))
             if num_frames == 0:
                 CONSOLE.log("[bold red]:skull: No usable images in the data folder.")
@@ -176,7 +197,8 @@ class ProcessImages:
         # Run COLMAP
         colmap_dir = self.output_dir / "colmap"
         if not self.skip_colmap:
-            assert self.make_square is False, "make_square is intended for use with skip_colmap"
+            assert not self.make_square, "make_square is intended for use with skip_colmap"
+            assert mask_dir is None, "masks are intended for use with skip_colmap"
 
             colmap_dir.mkdir(parents=True, exist_ok=True)
             colmap_model_path = colmap_dir / "sparse" / "0"
@@ -215,6 +237,8 @@ class ProcessImages:
                     image_id_to_depth_path=image_id_to_depth_path,
                     image_rename_map=image_rename_map,
                     crop_scale=crop_scale, crop_size=self.square_target_size,
+                    data_suffix=self.data_suffix,
+                    mask_dir=mask_dir,
                 )
                 summary_log.append(f"Colmap matched {num_matched_frames} images")
             summary_log.append(colmap_utils.get_matching_summary(num_frames, num_matched_frames))
