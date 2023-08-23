@@ -86,7 +86,8 @@ class SDFFieldConfig(FieldConfig):
     num_layers_color: int = 4
     """Number of layers for color network"""
     num_layers_diffuse_color: int = -1
-    """Number of layers for diffuse color network, set to -1 to disable diffuse decoupling"""
+    """Number of layers for diffuse color network, set to -1 to disable diffuse decoupling.
+       Don't use diffuse decoupling and use_direction=False at the same time."""
     hidden_dim_color: int = 256
     """Number of hidden dimension of color network"""
     hidden_dim_diffuse_color: int = 256
@@ -242,8 +243,10 @@ class SDFField(Field):
                 lin = nn.utils.weight_norm(lin)
             setattr(self, "clin" + str(l), lin)
 
-        # diffuse color network, code above was for specular color
+        # here is diffuse color network, code above was for specular color or
+        # just for color in case of no diffuse decoupling and no use_direction
         if self.config.num_layers_diffuse_color >= 0:
+            assert self.config.use_direction, "use_direction must be True when using diffuse decoupling"
             dims = [self.config.hidden_dim_diffuse_color for _ in range(self.config.num_layers_diffuse_color)]
             # point, feature, embedding
             embedding_appearance_dim = self.embedding_appearance.get_out_dim() if self.embedding_appearance else 0
