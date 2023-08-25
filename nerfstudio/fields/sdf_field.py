@@ -395,6 +395,7 @@ class SDFField(Field):
             )[0]
 
         inv_s = self.deviation_network.get_variance() # Single parameter
+        # print(inv_s, "inv_s") # TODO: temp
         true_cos = (ray_samples.frustums.directions * gradients).sum(-1, keepdim=True)
 
         # anneal as NeuS
