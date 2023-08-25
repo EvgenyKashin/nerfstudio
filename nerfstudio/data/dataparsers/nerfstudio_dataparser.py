@@ -64,6 +64,9 @@ class NerfstudioDataParserConfig(DataParserConfig):
     """The fraction of images to use for training. The remaining images are for eval."""
     depth_unit_scale_factor: float = 1e-3
     """Scales the depth values to meters. Default value is 0.001 for a millimeter to meter conversion."""
+    data_suffix: str = ""
+    """Suffix to add to the images and masks dirs. Useful for processing multiple datasets from the same root dir."""
+
 
 
 @dataclass
@@ -110,9 +113,12 @@ class Nerfstudio(DataParser):
         width = []
         distort = []
 
+        data_suffix = self.config.data_suffix
+
         for frame in meta["frames"]:
             filepath = PurePath(frame["file_path"])
-            fname = self._get_fname(filepath, data_dir)
+            fname = self._get_fname(filepath, data_dir,
+                                    downsample_folder_prefix=f"images{data_suffix}_")
             if not fname.exists():
                 num_skipped_image_filenames += 1
                 continue
@@ -154,13 +160,14 @@ class Nerfstudio(DataParser):
                 mask_fname = self._get_fname(
                     mask_filepath,
                     data_dir,
-                    downsample_folder_prefix="masks_",
+                    downsample_folder_prefix=f"masks{data_suffix}_",
                 )
                 mask_filenames.append(mask_fname)
 
             if "depth_file_path" in frame:
                 depth_filepath = PurePath(frame["depth_file_path"])
-                depth_fname = self._get_fname(depth_filepath, data_dir, downsample_folder_prefix="depths_")
+                depth_fname = self._get_fname(depth_filepath, data_dir,
+                                              downsample_folder_prefix=f"depths{data_suffix}_")
                 depth_filenames.append(depth_fname)
 
         if num_skipped_image_filenames >= 0:
