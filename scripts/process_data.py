@@ -111,6 +111,8 @@ class ProcessImages:
     """Suffix to add to the data folder name. Useful for processing multiple datasets in the same output_dir."""
     data_mask: Optional[Path] = None
     """Path to a directory of masks for the images. If used, the images without masks would be filtered out."""
+    preserve_filenames: bool = False
+    """If True, the filenames of the images will be preserved. This is useful when the images are already named"""
 
     def main(self) -> None:  # pylint: disable=R0915
         """Process images into a nerfstudio dataset."""
@@ -161,6 +163,7 @@ class ProcessImages:
             image_rename_map_paths = process_data_utils.copy_images(
                 self.data, image_dir=image_dir, crop_factor=self.crop_factor, verbose=self.verbose,
                 data_mask=self.data_mask, mask_dir=mask_dir,
+                preserve_filenames=self.preserve_filenames,
             )
             image_rename_map = dict((a.name, b.name) for a, b in image_rename_map_paths.items())
             num_frames = len(image_rename_map)

@@ -185,6 +185,7 @@ def copy_images_list(
     verbose: bool = False,
     mask_paths: Optional[List[Path]] = None,
     mask_dir: Optional[Path] = None,
+    preserve_filenames: bool = False,
 ) -> List[Path]:
     """Copy all images in a list of Paths. Useful for filtering from a directory.
     Args:
@@ -195,6 +196,7 @@ def copy_images_list(
         verbose: If True, print extra logging.
         mask_paths: Optional list of Paths of masks to copy to a new directory.
         mask_dir: Optional path to the output directory for the masks.
+        preserve_filenames: If True, preserve the original filenames.
     Returns:
         A list of the copied image Paths.
     """
@@ -212,18 +214,24 @@ def copy_images_list(
 
     copied_image_paths = []
 
-    # Images should be 1-indexed for the rest of the pipeline.
     for idx, image_path in enumerate(image_paths):
+        if preserve_filenames:
+            copied_image_path = image_dir / image_path.name
+        else:
+            # Images should be 1-indexed for the rest of the pipeline.
+            copied_image_path = image_dir / f"frame_{idx + 1:05d}{image_path.suffix}"
         if verbose:
             CONSOLE.log(f"Copying image {idx + 1} of {len(image_paths)}...")
-        copied_image_path = image_dir / f"frame_{idx + 1:05d}{image_path.suffix}"
         shutil.copy(image_path, copied_image_path)
         copied_image_paths.append(copied_image_path)
         if mask_paths is not None:
             if verbose:
                 CONSOLE.log(f"Copying mask {idx + 1} of {len(mask_paths)}...")
             mask_path = mask_paths[idx]
-            copied_mask_path = mask_dir / f"frame_{idx + 1:05d}{mask_path.suffix}"
+            if preserve_filenames:
+                copied_mask_path = mask_dir / mask_path.name
+            else:
+                copied_mask_path = mask_dir / f"frame_{idx + 1:05d}{mask_path.suffix}"
             shutil.copy(mask_path, copied_mask_path)
 
     if crop_border_pixels is not None:
@@ -308,6 +316,7 @@ def copy_and_upscale_polycam_depth_maps_list(
 def copy_images(
     data: Path, image_dir: Path, verbose, crop_factor: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0),
     data_mask: Optional[Path] = None, mask_dir: Optional[Path] = None,
+    preserve_filenames: bool = False,
 ) -> OrderedDict[Path, Path]:
     """Copy images from a directory to a new directory.
 
@@ -318,6 +327,7 @@ def copy_images(
         crop_factor: Portion of the image to crop. Should be in [0,1] (top, bottom, left, right)
         data_mask: Optional path to a directory of masks for the images.
         mask_dir: Optional path to the output directory for the masks.
+        preserve_filenames: If True, preserve the original filenames.
     Returns:
         The mapping from the original filenames to the new ones.
     """
@@ -345,7 +355,7 @@ def copy_images(
 
         copied_images = copy_images_list(
             image_paths=image_paths, image_dir=image_dir, crop_factor=crop_factor, verbose=verbose,
-            mask_paths=mask_paths, mask_dir=mask_dir,
+            mask_paths=mask_paths, mask_dir=mask_dir, preserve_filenames=preserve_filenames,
         )
         return OrderedDict((original_path, new_path) for original_path, new_path in zip(image_paths, copied_images))
 
