@@ -66,7 +66,10 @@ class NerfstudioDataParserConfig(DataParserConfig):
     """Scales the depth values to meters. Default value is 0.001 for a millimeter to meter conversion."""
     data_suffix: str = ""
     """Suffix to add to the images and masks dirs. Useful for processing multiple datasets from the same root dir."""
-
+    save_poses_path: Optional[Path] = None
+    """Path to save the poses after preprocessing. If None, the poses are not saved."""
+    load_poses_for_orient_and_scaling: Optional[Path] = None
+    """Path to load the poses for orientation and scaling from previous run. If None, the poses are not loaded."""
 
 
 @dataclass
@@ -114,7 +117,6 @@ class Nerfstudio(DataParser):
         distort = []
 
         data_suffix = self.config.data_suffix
-
         for frame in meta["frames"]:
             filepath = PurePath(frame["file_path"])
             fname = self._get_fname(filepath, data_dir,
@@ -228,21 +230,42 @@ class Nerfstudio(DataParser):
         else:
             orientation_method = self.config.orientation_method
 
-        poses = torch.from_numpy(np.array(poses).astype(np.float32))
-        poses, transform_matrix = camera_utils.auto_orient_and_center_poses(
-            poses,
-            method=orientation_method,
-            center_method=self.config.center_method,
-        )
+        poses = np.array(poses).astype(np.float32)
+        if self.config.save_poses_path is not None:
+            np.save(self.config.save_poses_path, poses)
+        poses = torch.from_numpy(poses)
+        if self.config.load_poses_for_orient_and_scaling is not None:
+            # use loaded poses for orientation and centering
+            assert orientation_method != "pca", "Cannot use pca orientation method with precomputed poses."
+            poses_orient = torch.from_numpy(np.load(self.config.load_poses_for_orient_and_scaling))
+            poses_orient, transform_matrix = camera_utils.auto_orient_and_center_poses(
+                poses_orient,
+                method=orientation_method,
+                center_method=self.config.center_method,
+            )
+            poses = transform_matrix @ poses
+        else:
+            poses_orient = None
+            poses, transform_matrix = camera_utils.auto_orient_and_center_poses(
+                poses,
+                method=orientation_method,
+                center_method=self.config.center_method,
+            )
 
         # TODO: temp
         # center the objects
-        poses[:, 2, 3] += 1.0    
+        poses[:, 2, 3] += 1.0
+        if poses_orient is not None:
+            poses_orient[:, 2, 3] += 1.0
 
         # Scale poses
         scale_factor = 1.0
         if self.config.auto_scale_poses:
-            scale_factor /= float(torch.max(torch.abs(poses[:, :3, 3])))
+            if poses_orient is None:
+                scale_factor /= float(torch.max(torch.abs(poses[:, :3, 3])))
+            else:
+                # use loaded poses for scaling
+                scale_factor /= float(torch.max(torch.abs(poses_orient[:, :3, 3])))
         scale_factor *= self.config.scale_factor
 
         poses[:, :3, 3] *= scale_factor
