@@ -222,7 +222,6 @@ class NeuSFactoModel(NeuSModel):
                 accumulation=outputs["accumulation"],
             )
             images_dict[key] = prop_depth_i
-
         return metrics_dict, images_dict
 
     def load_state_dict(self, state_dict: Mapping[str, Any], strict: bool = True):

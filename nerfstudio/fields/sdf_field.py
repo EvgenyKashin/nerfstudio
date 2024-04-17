@@ -557,7 +557,6 @@ class SDFField(Field):
         gradients = torch.autograd.grad(
             outputs=sdf, inputs=inputs, grad_outputs=d_output, create_graph=True, retain_graph=True, only_inputs=True
         )[0]
-
         rgb, tint = self.get_colors(inputs, directions_flat, gradients, geo_feature, camera_indices)
 
         rgb = rgb.view(*ray_samples.frustums.directions.shape[:-1], -1)
@@ -573,9 +572,9 @@ class SDFField(Field):
                 FieldHeadNames.NORMALS: normals,
                 FieldHeadNames.GRADIENT: gradients,
                 "tint": tint,
+                "diffuse": rgb - tint,
             }
         )
-
         if return_alphas:
             alphas = self.get_alpha(ray_samples, sdf, gradients)
             outputs.update({FieldHeadNames.ALPHA: alphas})

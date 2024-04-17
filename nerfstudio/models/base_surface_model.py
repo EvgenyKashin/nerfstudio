@@ -94,7 +94,8 @@ class SurfaceModelConfig(ModelConfig):
     """Tint loss (L1 regularizer) multiplier"""
 
 # Temporary here
-from diffusers.utils import pt_to_pil, randn_tensor
+# from diffusers.utils import pt_to_pil, randn_tensor
+from diffusers.utils.torch_utils import randn_tensor
 
 import torch.nn as nn
 
@@ -400,6 +401,10 @@ class SurfaceModel(Model):
             tint = self.renderer_normal(semantics=field_outputs["tint"], weights=weights)
             outputs.update({"tint": tint})
 
+        if "diffuse" in field_outputs:
+            diffuse = self.renderer_normal(semantics=field_outputs["diffuse"], weights=weights)
+            outputs.update({"diffuse": diffuse})
+
         # # it makes rendering slower
         # outputs["noise_from_grid"] = render_noise(outputs, ray_bundle, self)
 
@@ -416,6 +421,7 @@ class SurfaceModel(Model):
         loss_dict = {}
         image = batch["image"].to(self.device)
         loss_dict["rgb_loss"] = self.rgb_loss(image, outputs["rgb"])
+        # print(loss_dict["rgb_loss"].min(), loss_dict["rgb_loss"].mean(), loss_dict["rgb_loss"].max())
         if self.training:
             # eikonal loss
             grad_theta = outputs["eik_grad"]
