@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 from typing import Dict, ForwardRef, Generic, List, Literal, Optional, Tuple, Type, Union, cast, get_args, get_origin
+import json
+import imageio
 
 import cv2
 import numpy as np
@@ -67,6 +69,19 @@ class FullImageDatamanagerConfig(DataManagerConfig):
     """The image type returned from manager, caching images in uint8 saves memory"""
     max_thread_workers: Optional[int] = None
     """The maximum number of threads to use for caching images. If None, uses all available threads."""
+    save_undistorted_suffix: Optional[str] = None
+    """The suffix to add to the undistorted image file name."""
+
+
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.float32):
+            return float(obj)
+        if isinstance(obj, np.float64):
+            return float(obj)
+        if isinstance(obj, np.integer):
+            return int(obj)
+        return json.JSONEncoder.default(self, obj)
 
 
 class FullImageDatamanager(DataManager, Generic[TDataset]):
@@ -115,7 +130,18 @@ class FullImageDatamanager(DataManager, Generic[TDataset]):
                 style="bold yellow",
             )
             self.config.cache_images = "cpu"
+        if self.config.save_undistorted_suffix is not None:
+            assert self.config.data.suffix == ".json", "Only json files are supported"
+            assert self.config.dataparser.train_split_fraction == 1.0, "Only full datasets are supported now"
+            with open(self.config.data, "r") as f:
+                self.undistorted_data_transforms = json.load(f)
+
         self.cached_train, self.cached_eval = self.cache_images(self.config.cache_images)
+        if self.config.save_undistorted_suffix is not None:
+            with open(self.config.data.parent / f"transforms{self.config.save_undistorted_suffix}.json", "w") as f:
+                json.dump(self.undistorted_data_transforms, f, cls=NumpyEncoder)
+            print("Save undistorted transforms to ", self.config.data.parent / f"transforms{self.config.save_undistorted_suffix}.json")
+
         self.exclude_batch_keys_from_device = self.train_dataset.exclude_batch_keys_from_device
         if self.config.masks_on_gpu is True:
             self.exclude_batch_keys_from_device.remove("mask")
@@ -147,13 +173,50 @@ class FullImageDatamanager(DataManager, Generic[TDataset]):
             data["image"] = torch.from_numpy(image)
             if mask is not None:
                 data["mask"] = mask
-
             self.train_dataset.cameras.fx[idx] = float(K[0, 0])
             self.train_dataset.cameras.fy[idx] = float(K[1, 1])
             self.train_dataset.cameras.cx[idx] = float(K[0, 2])
             self.train_dataset.cameras.cy[idx] = float(K[1, 2])
             self.train_dataset.cameras.width[idx] = image.shape[1]
             self.train_dataset.cameras.height[idx] = image.shape[0]
+            if self.config.save_undistorted_suffix is not None:
+                # Save undistorted image to separate file
+                idx_filename = self.train_dataset.image_filenames[idx].name
+                # linear search, lol
+                idx_in_transforms = [
+                    i for i, frame in enumerate(self.undistorted_data_transforms["frames"]) if frame["file_path"].split("/")[-1] == idx_filename
+                ][0]
+                old_path = self.undistorted_data_transforms["frames"][idx_in_transforms]["file_path"]
+                new_path = f"images{self.config.save_undistorted_suffix}/{old_path.split('/')[-1]}"
+                self.undistorted_data_transforms["frames"][idx_in_transforms]["file_path"] = new_path
+
+                new_path = self.config.data.parent / new_path
+                new_path.parent.mkdir(parents=True, exist_ok=True)
+                imageio.imwrite(new_path, image)
+                
+                if mask is not None:
+                    old_mask_path = self.undistorted_data_transforms["frames"][idx_in_transforms]["mask_path"]
+                    new_mask_path = f"masks{self.config.save_undistorted_suffix}/{old_mask_path.split('/')[-1]}"
+                    self.undistorted_data_transforms["frames"][idx_in_transforms]["mask_path"] = new_mask_path
+
+                    new_mask_path = self.config.data.parent / new_mask_path
+                    new_mask_path.parent.mkdir(parents=True, exist_ok=True)
+                    mask_np = mask.numpy().astype(np.uint8) * 255
+                    mask_np = np.squeeze(mask_np, axis=-1)
+                    imageio.imwrite(new_mask_path, mask_np)    
+
+                if idx == 0:
+                    # save new intrinsics as well
+                    self.undistorted_data_transforms["w"] = image.shape[1]
+                    self.undistorted_data_transforms["h"] = image.shape[0]
+                    self.undistorted_data_transforms["fl_x"] = K[0, 0]
+                    self.undistorted_data_transforms["fl_y"] = K[1, 1]
+                    self.undistorted_data_transforms["cx"] = K[0, 2]
+                    self.undistorted_data_transforms["cy"] = K[1, 2]
+                    self.undistorted_data_transforms["k1"] = 0.0
+                    self.undistorted_data_transforms["k2"] = 0.0
+                    self.undistorted_data_transforms["p1"] = 0.0
+                    self.undistorted_data_transforms["p2"] = 0.0
             return data
 
         def process_eval_data(idx):
@@ -178,7 +241,6 @@ class FullImageDatamanager(DataManager, Generic[TDataset]):
             self.eval_dataset.cameras.width[idx] = image.shape[1]
             self.eval_dataset.cameras.height[idx] = image.shape[0]
             return data
-
         CONSOLE.log("Caching / undistorting train images")
         with ThreadPoolExecutor(max_workers=2) as executor:
             cached_train = list(

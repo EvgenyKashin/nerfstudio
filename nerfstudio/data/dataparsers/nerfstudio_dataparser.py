@@ -77,6 +77,12 @@ class NerfstudioDataParserConfig(DataParserConfig):
     """Replace the unknown pixels with this color. Relevant if you have a mask but still sample everywhere."""
     load_3D_points: bool = False
     """Whether to load the 3D points from the colmap reconstruction."""
+    data_suffix: str = ""
+    """Suffix to add to the images and masks dirs. Useful for processing multiple datasets from the same root dir."""
+    save_poses_path: Optional[Path] = None
+    """Path to save the poses after preprocessing. If None, the poses are not saved."""
+    load_poses_for_orient_and_scaling: Optional[Path] = None
+    """Path to load the poses for orientation and scaling from previous run. If None, the poses are not loaded."""
 
 
 @dataclass
@@ -130,9 +136,11 @@ class Nerfstudio(DataParser):
         inds = np.argsort(fnames)
         frames = [meta["frames"][ind] for ind in inds]
 
+        data_suffix = self.config.data_suffix
         for frame in frames:
             filepath = Path(frame["file_path"])
-            fname = self._get_fname(filepath, data_dir)
+            fname = self._get_fname(filepath, data_dir,
+                                    downsample_folder_prefix=f"images{data_suffix}_")
 
             if not fx_fixed:
                 assert "fl_x" in frame, "fx not specified in frame"
@@ -233,12 +241,27 @@ class Nerfstudio(DataParser):
         else:
             orientation_method = self.config.orientation_method
 
-        poses = torch.from_numpy(np.array(poses).astype(np.float32))
-        poses, transform_matrix = camera_utils.auto_orient_and_center_poses(
-            poses,
-            method=orientation_method,
-            center_method=self.config.center_method,
-        )
+        poses = np.array(poses).astype(np.float32)
+        if self.config.save_poses_path is not None:
+            np.save(self.config.save_poses_path, poses)
+        poses = torch.from_numpy(poses)
+        if self.config.load_poses_for_orient_and_scaling is not None:
+            # use loaded poses for orientation and centering
+            assert orientation_method != "pca", "Cannot use pca orientation method with precomputed poses."
+            poses_orient = torch.from_numpy(np.load(self.config.load_poses_for_orient_and_scaling))
+            poses_orient, transform_matrix = camera_utils.auto_orient_and_center_poses(
+                poses_orient,
+                method=orientation_method,
+                center_method=self.config.center_method,
+            )
+            poses = transform_matrix @ poses
+        else:
+            poses_orient = None
+            poses, transform_matrix = camera_utils.auto_orient_and_center_poses(
+                poses,
+                method=orientation_method,
+                center_method=self.config.center_method,
+            )
 
         # Scale poses
         scale_factor = 1.0
