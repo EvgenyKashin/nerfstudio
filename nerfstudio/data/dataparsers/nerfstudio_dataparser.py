@@ -141,7 +141,6 @@ class Nerfstudio(DataParser):
             filepath = Path(frame["file_path"])
             fname = self._get_fname(filepath, data_dir,
                                     downsample_folder_prefix=f"images{data_suffix}_")
-
             if not fx_fixed:
                 assert "fl_x" in frame, "fx not specified in frame"
                 fx.append(float(frame["fl_x"]))
@@ -234,7 +233,6 @@ class Nerfstudio(DataParser):
                 indices = i_eval
             else:
                 raise ValueError(f"Unknown dataparser split {split}")
-
         if "orientation_override" in meta:
             orientation_method = meta["orientation_override"]
             CONSOLE.log(f"[yellow] Dataset is overriding orientation method to {orientation_method}")
@@ -266,7 +264,14 @@ class Nerfstudio(DataParser):
         # Scale poses
         scale_factor = 1.0
         if self.config.auto_scale_poses:
-            scale_factor /= float(torch.max(torch.abs(poses[:, :3, 3])))
+            # scale_factor /= float(torch.max(torch.abs(poses[:, :3, 3])))
+            # IT'S VERY IMPORTANT, I SPEND A DAY HERE BC I FORGOT TO ADD IT
+            if poses_orient is None:
+                scale_factor /= float(torch.max(torch.abs(poses[:, :3, 3])))
+            else:
+                # use loaded poses for scaling
+                scale_factor /= float(torch.max(torch.abs(poses_orient[:, :3, 3])))
+
         scale_factor *= self.config.scale_factor
 
         poses[:, :3, 3] *= scale_factor
@@ -275,7 +280,6 @@ class Nerfstudio(DataParser):
         image_filenames = [image_filenames[i] for i in indices]
         mask_filenames = [mask_filenames[i] for i in indices] if len(mask_filenames) > 0 else []
         depth_filenames = [depth_filenames[i] for i in indices] if len(depth_filenames) > 0 else []
-
         idx_tensor = torch.tensor(indices, dtype=torch.long)
         poses = poses[idx_tensor]
 
