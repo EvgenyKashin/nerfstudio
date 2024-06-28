@@ -146,6 +146,9 @@ class SplatfactoModelConfig(ModelConfig):
     However, PLY exported with antialiased rasterize mode is not compatible with classic mode. Thus many web viewers that
     were implemented for classic mode can not render antialiased mode PLY properly without modifications.
     """
+    do_middle_reset: bool = False
+    """If True, reset the middle of the scene to a random once after loading"""
+
 
 
 class SplatfactoModel(Model):
@@ -287,6 +290,19 @@ class SplatfactoModel(Model):
             new_shape = (newp,) + old_shape[1:]
             self.gauss_params[name] = torch.nn.Parameter(torch.zeros(new_shape, device=self.device))
         super().load_state_dict(dict, **kwargs)
+
+        if self.config.do_middle_reset:
+            print("Resetting the middle of the scene")
+            mask_to_perturb = torch.all(self.means[:, :].abs() < 0.31, dim=-1).unsqueeze(-1)
+            perturbed_means = self.means + (torch.rand_like(self.means) - 0.5) * 0.3
+            new_quats = torch.nn.Parameter(random_quat_tensor(self.num_points)).to(self.device)
+            new_features_dc = torch.nn.Parameter(torch.rand(self.num_points, 3)).to(self.device) # TODO: add rest if sh_degree > 0
+            new_opacities = torch.nn.Parameter(torch.logit(0.1 * torch.ones(self.num_points, 1))).to(self.device)
+            # Assign the perturbed tensor back to the original tensor using out-of-place assignment
+            self.gauss_params["means"] = torch.where(mask_to_perturb.expand(-1, self.means.shape[1]), perturbed_means, self.means)
+            self.gauss_params["quats"] = torch.where(mask_to_perturb.expand(-1, self.quats.shape[1]), new_quats, self.quats)
+            self.gauss_params["features_dc"] = torch.where(mask_to_perturb.expand(-1, self.features_dc.shape[1]), new_features_dc, self.features_dc)
+            self.gauss_params["opacities"] = torch.where(mask_to_perturb.expand(-1, self.opacities.shape[1]), new_opacities, self.opacities)
 
     def k_nearest_sklearn(self, x: torch.Tensor, k: int):
         """
@@ -498,6 +514,7 @@ class SplatfactoModel(Model):
         # cull transparent ones
         culls = (torch.sigmoid(self.opacities) < self.config.cull_alpha_thresh).squeeze()
         below_alpha_count = torch.sum(culls).item()
+        CONSOLE.log(f"Culling {below_alpha_count} gaussians below alpha thresh")
         toobigs_count = 0
         if extra_cull_mask is not None:
             culls = culls | extra_cull_mask
