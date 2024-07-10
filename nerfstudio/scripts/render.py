@@ -442,10 +442,16 @@ class RenderCameraPath(BaseRender):
 
     def main(self) -> None:
         """Main function."""
+        def eval_hook(config):
+            if hasattr(config.pipeline.model, "do_middle_reset"):
+                config.pipeline.model.do_middle_reset = False
+            return config
+
         _, pipeline, _, _ = eval_setup(
             self.load_config,
             eval_num_rays_per_chunk=self.eval_num_rays_per_chunk,
             test_mode="inference",
+            update_config_callback=eval_hook,
         )
 
         install_checks.check_ffmpeg_installed()
