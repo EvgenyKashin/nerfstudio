@@ -147,8 +147,13 @@ class SplatfactoModelConfig(ModelConfig):
     were implemented for classic mode can not render antialiased mode PLY properly without modifications.
     """
     do_middle_reset: bool = False
-    """If True, reset the middle of the scene to a random once after loading"""
-
+    """If True, reset the middle of the scene to a random once after loading."""
+    use_aabb_mask: bool = False
+    """If True, use the AABB box to optimize only inside its mask."""
+    after_load_warmup_length: int = 0
+    """It is like warmup_length but only for the loaded model scenario."""
+    stop_split_at_ovveride_before_end: Optional[int] = None
+    """If set, ovveride stop_split_at to max_num_iterations - stop_split_at_ovveride_before_end"""
 
 
 class SplatfactoModel(Model):
@@ -224,6 +229,7 @@ class SplatfactoModel(Model):
         self.ssim = SSIM(data_range=1.0, size_average=True, channel=3)
         self.lpips = LearnedPerceptualImagePatchSimilarity(normalize=True)
         self.step = 0
+        self.loaded_step = None
 
         self.crop_box: Optional[OrientedBox] = None
         if self.config.background_color == "random":
@@ -290,14 +296,17 @@ class SplatfactoModel(Model):
             new_shape = (newp,) + old_shape[1:]
             self.gauss_params[name] = torch.nn.Parameter(torch.zeros(new_shape, device=self.device))
         super().load_state_dict(dict, **kwargs)
+        # print(self.step)
+        print("Number of points", newp)
+        self.loaded_step = -1  # Flag to indicate that we have loaded a checkpoint
 
         if self.config.do_middle_reset:
-            print("Resetting the middle of the scene")
+            CONSOLE.log("Resetting the middle of the scene")
             mask_to_perturb = torch.all(self.means[:, :].abs() < 0.31, dim=-1).unsqueeze(-1)
-            perturbed_means = self.means + (torch.rand_like(self.means) - 0.5) * 0.3
+            perturbed_means = self.means + (torch.rand_like(self.means) - 0.5) * 0.15
             new_quats = torch.nn.Parameter(random_quat_tensor(self.num_points)).to(self.device)
             new_features_dc = torch.nn.Parameter(torch.rand(self.num_points, 3)).to(self.device) # TODO: add rest if sh_degree > 0
-            new_opacities = torch.nn.Parameter(torch.logit(0.1 * torch.ones(self.num_points, 1))).to(self.device)
+            new_opacities = torch.nn.Parameter(torch.logit(0.25 * torch.ones(self.num_points, 1) + torch.rand(self.num_points, 1) / 3)).to(self.device)
             # Assign the perturbed tensor back to the original tensor using out-of-place assignment
             self.gauss_params["means"] = torch.where(mask_to_perturb.expand(-1, self.means.shape[1]), perturbed_means, self.means)
             self.gauss_params["quats"] = torch.where(mask_to_perturb.expand(-1, self.quats.shape[1]), new_quats, self.quats)
@@ -390,6 +399,10 @@ class SplatfactoModel(Model):
             visible_mask = (self.radii > 0).flatten()
             assert self.xys.grad is not None
             grads = self.xys.grad.detach().norm(dim=-1)
+            if self.mask_aabb is not None:
+                # we should intersect with the mask_aabb, so that we don't count the gradients of splats outside the mask
+                visible_mask = visible_mask & self.mask_aabb
+                grads[~self.mask_aabb] = 0
             # print(f"grad norm min {grads.min().item()} max {grads.max().item()} mean {grads.mean().item()} size {grads.shape}")
             if self.xys_grad_norm is None:
                 self.xys_grad_norm = grads
@@ -417,6 +430,11 @@ class SplatfactoModel(Model):
 
     def refinement_after(self, optimizers: Optimizers, step):
         assert step == self.step
+        if self.config.after_load_warmup_length > 0:
+            is_after_load_warmup = self.loaded_step is not None and self.step <= self.loaded_step + max(
+                self.num_train_data, self.config.after_load_warmup_length)
+        else:
+            is_after_load_warmup = False
         if self.step <= self.config.warmup_length:
             return
         with torch.no_grad():
@@ -424,10 +442,12 @@ class SplatfactoModel(Model):
             # save checkpoints right when the opacity is reset (saves every 2k)
             # then cull
             # only split/cull if we've seen every image since opacity reset
+            # TODO: debug reset_interval, because I don't want to save reseted
             reset_interval = self.config.reset_alpha_every * self.config.refine_every
             do_densification = (
                 self.step < self.config.stop_split_at
                 and self.step % reset_interval > self.num_train_data + self.config.refine_every
+                and not is_after_load_warmup
             )
             if do_densification:
                 # then we densify
@@ -480,6 +500,8 @@ class SplatfactoModel(Model):
                 deleted_mask = self.cull_gaussians(splits_mask)
             elif self.step >= self.config.stop_split_at and self.config.continue_cull_post_densification:
                 deleted_mask = self.cull_gaussians()
+            elif is_after_load_warmup:
+                deleted_mask = self.cull_gaussians()
             else:
                 # if we donot allow culling post refinement, no more gaussians will be pruned.
                 deleted_mask = None
@@ -489,7 +511,7 @@ class SplatfactoModel(Model):
 
             if self.step < self.config.stop_split_at and self.step % reset_interval == self.config.refine_every:
                 # Reset value is set to be twice of the cull_alpha_thresh
-                reset_value = self.config.cull_alpha_thresh * 2.0
+                reset_value = self.config.cull_alpha_thresh * 1.6  # TODO: make this a parameter, default 2.0
                 self.opacities.data = torch.clamp(
                     self.opacities.data,
                     max=torch.logit(torch.tensor(reset_value, device=self.device)).item(),
@@ -591,6 +613,7 @@ class SplatfactoModel(Model):
     ) -> List[TrainingCallback]:
         cbs = []
         cbs.append(TrainingCallback([TrainingCallbackLocation.BEFORE_TRAIN_ITERATION], self.step_cb))
+        cbs.append(TrainingCallback([TrainingCallbackLocation.BEFORE_TRAIN_ITERATION_MAX], self.max_step_cb))
         # The order of these matters
         cbs.append(
             TrainingCallback(
@@ -608,8 +631,22 @@ class SplatfactoModel(Model):
         )
         return cbs
 
+    def max_step_cb(self, step):
+        # step here is max step of training
+        # I know, it's not the best use of callbacks lol
+        # log it
+        # CONSOLE.log(f"Max step {step}")
+        if self.config.stop_split_at_ovveride_before_end is not None:
+            self.config.stop_split_at = step - self.config.stop_split_at_ovveride_before_end
+            # CONSOLE.log(f"Overriding stop_split_at to {self.config.stop_split_at}")
+
     def step_cb(self, step):
+        # log it
+        CONSOLE.log(f"Step {step}")
         self.step = step
+        if self.loaded_step is not None and self.loaded_step == -1:
+            self.loaded_step = step
+            print(f"Loaded step {self.loaded_step}")
 
     def get_gaussian_param_groups(self) -> Dict[str, List[Parameter]]:
         # Here we explicitly use the means, scales as parameters so that the user can override this function and
@@ -723,6 +760,12 @@ class SplatfactoModel(Model):
             scales_crop = self.scales
             quats_crop = self.quats
 
+        # Create AABB mask
+        if self.config.use_aabb_mask:
+            self.mask_aabb = torch.all(means_crop[:, :].abs() < 0.31, dim=-1).detach().cuda().bool()
+        else:
+            self.mask_aabb = None
+
         colors_crop = torch.cat((features_dc_crop[:, None, :], features_rest_crop), dim=1)
         BLOCK_WIDTH = 16  # this controls the tile size of rasterization, 16 is a good default
         self.xys, depths, self.radii, conics, comp, num_tiles_hit, cov3d = project_gaussians(  # type: ignore
@@ -788,6 +831,49 @@ class SplatfactoModel(Model):
             background=background,
             return_alpha=True,
         )  # type: ignore
+
+        # VISUALISATION, TEMPORARY
+        # xy_to_pix = torch.floor(self.xys).long()  # flooring, in the ideal perfect scenario, converts pixel xy projection [0.5, 0.5] to correct [0,0] uv coordinate
+        # # note that > 0.0 values give valid depths
+        # valid_indices = (
+        #     (xy_to_pix[:, 0] > 0)
+        #     & (xy_to_pix[:, 0] < W)
+        #     & (xy_to_pix[:, 1] > 0)
+        #     & (xy_to_pix[:, 1] < H)
+        # )
+        # xy_to_pix = xy_to_pix[valid_indices]
+        # np_array = xy_to_pix.cpu().numpy()
+
+        # import matplotlib.pyplot as plt
+        # from mpl_scatter_density import ScatterDensityArtist
+        # import mpl_scatter_density
+        # # Create the scatter density plot
+        # fig = plt.figure()
+        # ax = fig.add_subplot(1, 1, 1, projection='scatter_density')
+
+        # x = np_array[:, 0]
+        # y = np_array[:, 1]
+
+        # density = ax.scatter_density(x, y, dpi=18)
+        # # ax.scatter(x, y, s=5, alpha=0.5)
+
+        # ax.set_title('Scatter Density Plot')
+        # ax.set_xlabel('X axis')
+        # ax.set_ylabel('Y axis')
+        # # make x and y labels be from 0 to 512 
+        # ax.set_xlim(0, 512)
+        # ax.set_ylim(0, 512)
+        # ax.invert_yaxis() # Invert y axis to match the image
+        # plt.colorbar(density, label='Density')
+        # plt.savefig('temp_out/videos/scatter_density_plot_aabb.png')
+
+        # from PIL import Image
+        # image = rgb.cpu().detach().numpy()
+        # image = (image * 255).astype(np.uint8)
+        # image = Image.fromarray(image)
+        # image.save('temp_out/videos/image_aabb.png')
+        # import pdb;pdb.set_trace()
+
         alpha = alpha[..., None]
         rgb = torch.clamp(rgb, max=1.0)  # type: ignore
         depth_im = None
@@ -807,7 +893,7 @@ class SplatfactoModel(Model):
             )[..., 0:1]  # type: ignore
             depth_im = torch.where(alpha > 0, depth_im / alpha, depth_im.detach().max())
 
-        return {"rgb": rgb, "depth": depth_im, "accumulation": alpha, "background": background}  # type: ignore
+        return {"rgb": rgb, "depth": depth_im, "accumulation": alpha, "background": background, "mask_aabb": self.mask_aabb}  # type: ignore
 
     def get_gt_img(self, image: torch.Tensor):
         """Compute groundtruth image with iteration dependent downscale factor for evaluation purpose
@@ -887,6 +973,7 @@ class SplatfactoModel(Model):
         return {
             "main_loss": (1 - self.config.ssim_lambda) * Ll1 + self.config.ssim_lambda * simloss,
             "scale_reg": scale_reg,
+            "mask_aabb": outputs["mask_aabb"],
         }
 
     @torch.no_grad()
