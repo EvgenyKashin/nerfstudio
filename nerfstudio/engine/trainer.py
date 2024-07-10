@@ -84,6 +84,8 @@ class TrainerConfig(ExperimentConfig):
     """Optionally log gradients during training"""
     gradient_accumulation_steps: Dict[str, int] = field(default_factory=lambda: {})
     """Number of steps to accumulate gradients over. Contains a mapping of {param_group:num}"""
+    use_schedulers: bool = True
+    """Whether to use schedulers for the optimizers. False maybe used for loading and finetuning with fixed lr"""
 
 
 class Trainer:
@@ -244,6 +246,12 @@ class Trainer:
                         for callback in self.callbacks:
                             callback.run_callback_at_location(
                                 step, location=TrainingCallbackLocation.BEFORE_TRAIN_ITERATION
+                            )
+
+                        # training callbacks before the training iteration with max step
+                        for callback in self.callbacks:
+                            callback.run_callback_at_location(
+                                self._start_step + num_iterations, location=TrainingCallbackLocation.BEFORE_TRAIN_ITERATION_MAX
                             )
 
                         # time the forward pass
@@ -469,13 +477,26 @@ class Trainer:
 
         with torch.autocast(device_type=cpu_or_cuda_str, enabled=self.mixed_precision):
             _, loss_dict, metrics_dict = self.pipeline.get_train_loss_dict(step=step)
+            mask_aabb = loss_dict.get("mask_aabb", None)
+            # remove mask_aabb from loss_dict
+            loss_dict = {k: v for k, v in loss_dict.items() if k != "mask_aabb"}
             loss = functools.reduce(torch.add, loss_dict.values())
+
         self.grad_scaler.scale(loss).backward()  # type: ignore
         needs_step = [
             group
             for group in self.optimizers.parameters.keys()
             if step % self.gradient_accumulation_steps[group] == self.gradient_accumulation_steps[group] - 1
         ]
+        if mask_aabb is not None:
+            for tag, value in self.pipeline.model.named_parameters():
+                if tag.startswith("gauss_params.") and value.grad is not None:
+                    if value.grad.dim() == 3:
+                        # skip features_rest TODO: temp
+                        continue
+                    # value.grad.mul_(mask_aabb.unsqueeze(1))
+                    value.grad[~mask_aabb] = 0
+
         self.optimizers.optimizer_scaler_step_some(self.grad_scaler, needs_step)
 
         if self.config.log_gradients:
@@ -493,7 +514,7 @@ class Trainer:
         self.grad_scaler.update()
         # If the gradient scaler is decreased, no optimization step is performed so we should not step the scheduler.
         if scale <= self.grad_scaler.get_scale():
-            self.optimizers.scheduler_step_all(step)
+            self.optimizers.scheduler_step_all(step, self.config.use_schedulers)
 
         # Merging loss and metrics dict into a single output.
         return loss, loss_dict, metrics_dict  # type: ignore

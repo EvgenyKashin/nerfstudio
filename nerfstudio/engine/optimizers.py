@@ -179,14 +179,16 @@ class Optimizers:
                 torch.nn.utils.clip_grad_norm_(self.parameters[param_group], max_norm)
             optimizer.step()
 
-    def scheduler_step_all(self, step: int) -> None:
+    def scheduler_step_all(self, step: int, do_step: bool = True) -> None:
         """Run step for all schedulers.
 
         Args:
             step: the current step
+            do_step: whether to step the scheduler, if False, only log the learning rate
         """
         for param_group_name, scheduler in self.schedulers.items():
-            scheduler.step()
+            if do_step:
+                scheduler.step()
             # TODO(ethan): clean this up. why is there indexing into a list?
             lr = scheduler.get_last_lr()[0]
             writer.put_scalar(name=f"learning_rate/{param_group_name}", scalar=lr, step=step)

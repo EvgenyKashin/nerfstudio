@@ -52,6 +52,7 @@ class TrainingCallbackLocation(Enum):
     """Enum for specifying where the training callback should be run."""
 
     BEFORE_TRAIN_ITERATION = auto()
+    BEFORE_TRAIN_ITERATION_MAX = auto()
     AFTER_TRAIN_ITERATION = auto()
     AFTER_TRAIN = auto()
 
