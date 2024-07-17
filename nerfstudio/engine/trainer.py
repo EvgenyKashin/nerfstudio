@@ -479,9 +479,12 @@ class Trainer:
             _, loss_dict, metrics_dict = self.pipeline.get_train_loss_dict(step=step)
             mask_aabb = loss_dict.get("mask_aabb", None)
             # remove mask_aabb from loss_dict
-            loss_dict = {k: v for k, v in loss_dict.items() if k != "mask_aabb"}
+            to_remove_from_loss = ["mask_aabb"]
+            if step < 1000: # TOOD: make this a config
+                to_remove_from_loss.append("opacity_reg")
+            # loss_dict = {k: v for k, v in loss_dict.items() if k != "mask_aabb"}
+            loss_dict = {k: v for k, v in loss_dict.items() if k not in to_remove_from_loss}
             loss = functools.reduce(torch.add, loss_dict.values())
-
         self.grad_scaler.scale(loss).backward()  # type: ignore
         needs_step = [
             group

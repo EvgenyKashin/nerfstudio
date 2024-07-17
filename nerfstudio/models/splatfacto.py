@@ -832,6 +832,44 @@ class SplatfactoModel(Model):
             return_alpha=True,
         )  # type: ignore
 
+        # Unique splat ID rendering (doesn't work because of gaussian-shape of each splat)
+        # unique_splat_id = torch.arange(means_crop.shape[0],
+        #                                device=self.device, dtype=torch.float32)
+        # unique_splat_image = rasterize_gaussians(  # type: ignore
+        #     self.xys,
+        #     depths,
+        #     self.radii,
+        #     conics,
+        #     num_tiles_hit,  # type: ignore
+        #     # depths[:, None].repeat(1, 3),
+        #     unique_splat_id[:, None].repeat(1, 3),
+        #     opacities,
+        #     H,
+        #     W,
+        #     BLOCK_WIDTH,
+        #     background=torch.zeros(3, device=self.device),
+        # )[..., 0:1]  # type: ignore
+        # # unique_splat_image /= unique_splat_image.max()
+        # unique_splat_image = unique_splat_image.to(torch.int32).cpu()
+
+        # # Get unique triangle IDs
+        # unique_ids = torch.unique(unique_splat_image)
+
+        # # Generate random RGB colors for each unique triangle ID
+        # num_unique_ids = unique_ids.size(0)
+        # random_colors = torch.randint(0, 256, (num_unique_ids, 3), dtype=torch.uint8)
+
+        # # Create a mapping from triangle ID to color
+        # id_to_color = torch.zeros((unique_ids.max() + 1, 3), dtype=torch.uint8)
+        # id_to_color[unique_ids] = random_colors
+
+        # # Map the colors to the triangle ID tensor
+        # rgb_image = id_to_color[unique_splat_image]
+        # unique_splat_image = rgb_image[..., 0, :]
+
+        # convert all unique ids to random rgb colours
+        # unique_splat_image = torch.nn.functional.one_hot(unique_splat_image.squeeze(), num_classes=unique_splat_id.shape[0]).float()
+        # unique_splat_image = unique_splat_image @ torch.rand(unique_splat_id.shape[0], 3, device=self.device)
         # VISUALISATION, TEMPORARY
         # xy_to_pix = torch.floor(self.xys).long()  # flooring, in the ideal perfect scenario, converts pixel xy projection [0.5, 0.5] to correct [0,0] uv coordinate
         # # note that > 0.0 values give valid depths
@@ -892,8 +930,7 @@ class SplatfactoModel(Model):
                 background=torch.zeros(3, device=self.device),
             )[..., 0:1]  # type: ignore
             depth_im = torch.where(alpha > 0, depth_im / alpha, depth_im.detach().max())
-
-        return {"rgb": rgb, "depth": depth_im, "accumulation": alpha, "background": background, "mask_aabb": self.mask_aabb}  # type: ignore
+        return {"rgb": rgb, "depth": depth_im, "accumulation": alpha, "background": background, "mask_aabb": self.mask_aabb, "opacities": opacities, "unique_splat_image": unique_splat_image}  # type: ignore
 
     def get_gt_img(self, image: torch.Tensor):
         """Compute groundtruth image with iteration dependent downscale factor for evaluation purpose
@@ -966,14 +1003,18 @@ class SplatfactoModel(Model):
                 )
                 - self.config.max_gauss_ratio
             )
-            scale_reg = 0.1 * scale_reg.mean()
+            scale_reg = 1.0 * scale_reg.mean()  # TODO: param, was 0.1
         else:
             scale_reg = torch.tensor(0.0).to(self.device)
+
+        # L2 regularization on opacities forcing them close to 1.0
+        opacity_reg = 0.1 * (torch.sigmoid(self.opacities) - 1.0).pow(2).mean()
 
         return {
             "main_loss": (1 - self.config.ssim_lambda) * Ll1 + self.config.ssim_lambda * simloss,
             "scale_reg": scale_reg,
             "mask_aabb": outputs["mask_aabb"],
+            "opacity_reg": opacity_reg,
         }
 
     @torch.no_grad()
