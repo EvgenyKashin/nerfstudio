@@ -867,9 +867,6 @@ class SplatfactoModel(Model):
         # rgb_image = id_to_color[unique_splat_image]
         # unique_splat_image = rgb_image[..., 0, :]
 
-        # convert all unique ids to random rgb colours
-        # unique_splat_image = torch.nn.functional.one_hot(unique_splat_image.squeeze(), num_classes=unique_splat_id.shape[0]).float()
-        # unique_splat_image = unique_splat_image @ torch.rand(unique_splat_id.shape[0], 3, device=self.device)
         # VISUALISATION, TEMPORARY
         # xy_to_pix = torch.floor(self.xys).long()  # flooring, in the ideal perfect scenario, converts pixel xy projection [0.5, 0.5] to correct [0,0] uv coordinate
         # # note that > 0.0 values give valid depths
@@ -930,7 +927,7 @@ class SplatfactoModel(Model):
                 background=torch.zeros(3, device=self.device),
             )[..., 0:1]  # type: ignore
             depth_im = torch.where(alpha > 0, depth_im / alpha, depth_im.detach().max())
-        return {"rgb": rgb, "depth": depth_im, "accumulation": alpha, "background": background, "mask_aabb": self.mask_aabb, "opacities": opacities, "unique_splat_image": unique_splat_image}  # type: ignore
+        return {"rgb": rgb, "depth": depth_im, "accumulation": alpha, "background": background, "mask_aabb": self.mask_aabb, "opacities": opacities}  # type: ignore # , "unique_splat_image": unique_splat_image
 
     def get_gt_img(self, image: torch.Tensor):
         """Compute groundtruth image with iteration dependent downscale factor for evaluation purpose
