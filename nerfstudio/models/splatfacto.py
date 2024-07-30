@@ -154,7 +154,14 @@ class SplatfactoModelConfig(ModelConfig):
     """It is like warmup_length but only for the loaded model scenario."""
     stop_split_at_ovveride_before_end: Optional[int] = None
     """If set, ovveride stop_split_at to max_num_iterations - stop_split_at_ovveride_before_end"""
-
+    use_opacity_regularization: bool = True
+    "Force the opacity to be close to 1.0"
+    use_normals_regularization: bool = False
+    "Force the normals to be close to the camera"
+    use_2dgs_approximation: bool = False
+    "Use 2D Gaussian Splatting approximation"
+    use_cull_alpha_thresh_schedule: bool = False
+    "Use a schedule for culling alpha threshold, currently it will make it 0.99 after 6000 steps"
 
 class SplatfactoModel(Model):
     """Nerfstudio's implementation of Gaussian Splatting
@@ -185,7 +192,10 @@ class SplatfactoModel(Model):
         distances = torch.from_numpy(distances)
         # find the average of the three nearest neighbors for each point and use that as the scale
         avg_dist = distances.mean(dim=-1, keepdim=True)
-        scales = torch.nn.Parameter(torch.log(avg_dist.repeat(1, 3)))
+        if self.config.use_2dgs_approximation:
+            scales = torch.nn.Parameter(torch.log(avg_dist.repeat(1, 2)))
+        else:
+            scales = torch.nn.Parameter(torch.log(avg_dist.repeat(1, 3)))
         num_points = means.shape[0]
         quats = torch.nn.Parameter(random_quat_tensor(num_points))
         dim_sh = num_sh_bases(self.config.sh_degree)
@@ -296,7 +306,6 @@ class SplatfactoModel(Model):
             new_shape = (newp,) + old_shape[1:]
             self.gauss_params[name] = torch.nn.Parameter(torch.zeros(new_shape, device=self.device))
         super().load_state_dict(dict, **kwargs)
-        # print(self.step)
         print("Number of points", newp)
         self.loaded_step = -1  # Flag to indicate that we have loaded a checkpoint
 
@@ -306,7 +315,8 @@ class SplatfactoModel(Model):
             perturbed_means = self.means + (torch.rand_like(self.means) - 0.5) * 0.15
             new_quats = torch.nn.Parameter(random_quat_tensor(self.num_points)).to(self.device)
             new_features_dc = torch.nn.Parameter(torch.rand(self.num_points, 3)).to(self.device) # TODO: add rest if sh_degree > 0
-            new_opacities = torch.nn.Parameter(torch.logit(0.25 * torch.ones(self.num_points, 1) + torch.rand(self.num_points, 1) / 3)).to(self.device)
+            # new_opacities = torch.nn.Parameter(torch.logit(0.25 * torch.ones(self.num_points, 1) + torch.rand(self.num_points, 1) / 3)).to(self.device)
+            new_opacities = torch.nn.Parameter(torch.logit(0.999 * torch.ones(self.num_points, 1))).to(self.device)
             # Assign the perturbed tensor back to the original tensor using out-of-place assignment
             self.gauss_params["means"] = torch.where(mask_to_perturb.expand(-1, self.means.shape[1]), perturbed_means, self.means)
             self.gauss_params["quats"] = torch.where(mask_to_perturb.expand(-1, self.quats.shape[1]), new_quats, self.quats)
@@ -391,6 +401,8 @@ class SplatfactoModel(Model):
 
     def after_train(self, step: int):
         assert step == self.step
+        if self.config.use_cull_alpha_thresh_schedule and self.step == 6000:
+            self.config.cull_alpha_thresh = 0.99
         # to save some training time, we no longer need to update those stats post refinement
         if self.step >= self.config.stop_split_at:
             return
@@ -442,7 +454,6 @@ class SplatfactoModel(Model):
             # save checkpoints right when the opacity is reset (saves every 2k)
             # then cull
             # only split/cull if we've seen every image since opacity reset
-            # TODO: debug reset_interval, because I don't want to save reseted
             reset_interval = self.config.reset_alpha_every * self.config.refine_every
             do_densification = (
                 self.step < self.config.stop_split_at
@@ -566,8 +577,17 @@ class SplatfactoModel(Model):
         n_splits = split_mask.sum().item()
         CONSOLE.log(f"Splitting {split_mask.sum().item()/self.num_points} gaussians: {n_splits}/{self.num_points}")
         centered_samples = torch.randn((samps * n_splits, 3), device=self.device)  # Nx3 of axis-aligned scales
+        if self.config.use_2dgs_approximation:
+            # Create a new column to transform disc to ellipse
+            new_column = torch.full((self.scales[split_mask].size(0), 1),
+                                    torch.log(torch.tensor(0.0001)), device=self.device)
+            scales_temp = torch.cat(
+                (self.scales[split_mask], new_column), dim=1
+            )
+        else:
+            scales_temp = self.scales[split_mask]
         scaled_samples = (
-            torch.exp(self.scales[split_mask].repeat(samps, 1)) * centered_samples
+            torch.exp(scales_temp.repeat(samps, 1)) * centered_samples
         )  # how these scales are rotated
         quats = self.quats[split_mask] / self.quats[split_mask].norm(dim=-1, keepdim=True)  # normalize them first
         rots = quat_to_rotmat(quats.repeat(samps, 1))  # how these scales are rotated
@@ -634,11 +654,10 @@ class SplatfactoModel(Model):
     def max_step_cb(self, step):
         # step here is max step of training
         # I know, it's not the best use of callbacks lol
-        # log it
-        # CONSOLE.log(f"Max step {step}")
         if self.config.stop_split_at_ovveride_before_end is not None:
             self.config.stop_split_at = step - self.config.stop_split_at_ovveride_before_end
-            # CONSOLE.log(f"Overriding stop_split_at to {self.config.stop_split_at}")
+            # TODO: TEMP
+            self.config.stop_screen_size_at = step - self.config.stop_split_at_ovveride_before_end
 
     def step_cb(self, step):
         # log it
@@ -768,6 +787,14 @@ class SplatfactoModel(Model):
 
         colors_crop = torch.cat((features_dc_crop[:, None, :], features_rest_crop), dim=1)
         BLOCK_WIDTH = 16  # this controls the tile size of rasterization, 16 is a good default
+
+        if self.config.use_2dgs_approximation:
+            # Create a new column to transform disc to ellipse
+            new_column = torch.full((scales_crop.size(0), 1),
+                                    torch.log(torch.tensor(0.0001)), device=self.device)
+            scales_crop = torch.cat(
+                (scales_crop, new_column), dim=1
+            )
         self.xys, depths, self.radii, conics, comp, num_tiles_hit, cov3d = project_gaussians(  # type: ignore
             means_crop,
             torch.exp(scales_crop),
@@ -831,6 +858,51 @@ class SplatfactoModel(Model):
             background=background,
             return_alpha=True,
         )  # type: ignore
+
+        if self.config.use_normals_regularization:
+            vector = torch.tensor([0.0, 0.0, 1.0], device=self.device)
+            normals = quat_to_rotmat(quats_crop / quats_crop.norm(dim=-1, keepdim=True)) @ vector
+            normals = normals / normals.norm(dim=-1, keepdim=True)
+            # for visulisation
+            # normals = normals / 2 + 0.5
+            normals, alpha = rasterize_gaussians(  # type: ignore
+                self.xys,
+                depths,
+                self.radii,
+                conics,
+                num_tiles_hit,  # type: ignore
+                normals,
+                opacities,
+                H,
+                W,
+                BLOCK_WIDTH,
+                background=background,
+                return_alpha=True,
+            )  # type: ignore
+
+            viewdirs = means_crop.detach() - camera.camera_to_worlds[..., :3, 3].detach()
+            viewdirs = viewdirs / viewdirs.norm(dim=-1, keepdim=True)
+            viewdirs, alpha = rasterize_gaussians(  # type: ignore
+                self.xys,
+                depths,
+                self.radii,
+                conics,
+                num_tiles_hit,  # type: ignore
+                viewdirs,
+                opacities,
+                H,
+                W,
+                BLOCK_WIDTH,
+                background=background,
+                return_alpha=True,
+            )  # type: ignore
+            # abs because I don't care about direction
+            # here we calculate the dot product of RENDERINGS of normals and viewdirs, othervise it's not meaningful
+            dot_products = torch.abs(torch.sum(normals * viewdirs, dim=-1, keepdim=True))
+            # calculate loss, we care only for normals and viewdirs being parallel to each other
+            normals_loss = torch.mean(-dot_products)
+            # for visulisation
+            dot_products = dot_products.expand(-1, -1, 3)
 
         # Unique splat ID rendering (doesn't work because of gaussian-shape of each splat)
         # unique_splat_id = torch.arange(means_crop.shape[0],
@@ -927,7 +999,13 @@ class SplatfactoModel(Model):
                 background=torch.zeros(3, device=self.device),
             )[..., 0:1]  # type: ignore
             depth_im = torch.where(alpha > 0, depth_im / alpha, depth_im.detach().max())
-        return {"rgb": rgb, "depth": depth_im, "accumulation": alpha, "background": background, "mask_aabb": self.mask_aabb, "opacities": opacities}  # type: ignore # , "unique_splat_image": unique_splat_image
+
+        outputs = {"rgb": rgb, "depth": depth_im, "accumulation": alpha, "background": background,
+                   "mask_aabb": self.mask_aabb, "opacities": opacities}
+        if self.config.use_normals_regularization:
+            outputs["normals_loss"] = normals_loss
+            outputs["dot_products"] = dot_products
+        return outputs
 
     def get_gt_img(self, image: torch.Tensor):
         """Compute groundtruth image with iteration dependent downscale factor for evaluation purpose
@@ -1003,15 +1081,22 @@ class SplatfactoModel(Model):
             scale_reg = 1.0 * scale_reg.mean()  # TODO: param, was 0.1
         else:
             scale_reg = torch.tensor(0.0).to(self.device)
-
+        if self.config.use_normals_regularization and self.step % 10 == 0:
+            normals_loss = 0.1 * outputs["normals_loss"]
+        else:
+            normals_loss = torch.tensor(0.0).to(self.device)
         # L2 regularization on opacities forcing them close to 1.0
-        opacity_reg = 0.1 * (torch.sigmoid(self.opacities) - 1.0).pow(2).mean()
+        if self.config.use_opacity_regularization:
+            opacity_reg = 0.1 * (torch.sigmoid(self.opacities) - 1.0).pow(2).mean()
+        else:
+            opacity_reg = torch.tensor(0.0).to(self.device)
 
         return {
             "main_loss": (1 - self.config.ssim_lambda) * Ll1 + self.config.ssim_lambda * simloss,
             "scale_reg": scale_reg,
             "mask_aabb": outputs["mask_aabb"],
             "opacity_reg": opacity_reg,
+            "normals_loss": normals_loss,
         }
 
     @torch.no_grad()
