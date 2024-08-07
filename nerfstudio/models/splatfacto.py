@@ -96,6 +96,8 @@ class SplatfactoModelConfig(ModelConfig):
     """at the beginning, resolution is 1/2^d, where d is this number"""
     cull_alpha_thresh: float = 0.1
     """threshold of opacity for culling gaussians. One can set it to a lower value (e.g. 0.005) for higher quality."""
+    cull_alpha_thresh_second: float = 0.99
+    """threshold of opacity for culling gaussians in the second phase of schedule"""
     cull_scale_thresh: float = 0.5
     """threshold of scale for culling huge gaussians"""
     continue_cull_post_densification: bool = True
@@ -158,10 +160,12 @@ class SplatfactoModelConfig(ModelConfig):
     "Force the opacity to be close to 1.0"
     use_normals_regularization: bool = False
     "Force the normals to be close to the camera"
+    normals_regularization_lambda: float = 0.0
+    "Weight of the normals regularization"
     use_2dgs_approximation: bool = False
     "Use 2D Gaussian Splatting approximation"
-    use_cull_alpha_thresh_schedule: bool = False
-    "Use a schedule for culling alpha threshold, currently it will make it 0.99 after 6000 steps"
+    use_secondary_losses_schedule: bool = False
+    "Use a schedule for culling alpha threshold and normals regularization, and others"
 
 class SplatfactoModel(Model):
     """Nerfstudio's implementation of Gaussian Splatting
@@ -240,6 +244,8 @@ class SplatfactoModel(Model):
         self.lpips = LearnedPerceptualImagePatchSimilarity(normalize=True)
         self.step = 0
         self.loaded_step = None
+        self.cull_alpha_thresh = self.config.cull_alpha_thresh
+        self.normals_regularization_lambda = 0.0
 
         self.crop_box: Optional[OrientedBox] = None
         if self.config.background_color == "random":
@@ -308,6 +314,10 @@ class SplatfactoModel(Model):
         super().load_state_dict(dict, **kwargs)
         print("Number of points", newp)
         self.loaded_step = -1  # Flag to indicate that we have loaded a checkpoint
+        if self.config.use_secondary_losses_schedule:
+            # assume that after loading, we are in the second phase of schedule
+            self.cull_alpha_thresh = self.config.cull_alpha_thresh_second
+            self.normals_regularization_lambda = self.config.normals_regularization_lambda
 
         if self.config.do_middle_reset:
             CONSOLE.log("Resetting the middle of the scene")
@@ -401,8 +411,9 @@ class SplatfactoModel(Model):
 
     def after_train(self, step: int):
         assert step == self.step
-        if self.config.use_cull_alpha_thresh_schedule and self.step == 6000:
-            self.config.cull_alpha_thresh = 0.99
+        if self.config.use_secondary_losses_schedule and self.step == 6000:
+            self.cull_alpha_thresh = self.config.cull_alpha_thresh_second
+            self.normals_regularization_lambda = self.config.normals_regularization_lambda
         # to save some training time, we no longer need to update those stats post refinement
         if self.step >= self.config.stop_split_at:
             return
@@ -522,7 +533,7 @@ class SplatfactoModel(Model):
 
             if self.step < self.config.stop_split_at and self.step % reset_interval == self.config.refine_every:
                 # Reset value is set to be twice of the cull_alpha_thresh
-                reset_value = self.config.cull_alpha_thresh * 1.6  # TODO: make this a parameter, default 2.0
+                reset_value = self.cull_alpha_thresh * 1.6  # TODO: make this a parameter, default 2.0
                 self.opacities.data = torch.clamp(
                     self.opacities.data,
                     max=torch.logit(torch.tensor(reset_value, device=self.device)).item(),
@@ -545,7 +556,7 @@ class SplatfactoModel(Model):
         """
         n_bef = self.num_points
         # cull transparent ones
-        culls = (torch.sigmoid(self.opacities) < self.config.cull_alpha_thresh).squeeze()
+        culls = (torch.sigmoid(self.opacities) < self.cull_alpha_thresh).squeeze()
         below_alpha_count = torch.sum(culls).item()
         CONSOLE.log(f"Culling {below_alpha_count} gaussians below alpha thresh")
         toobigs_count = 0
@@ -863,8 +874,6 @@ class SplatfactoModel(Model):
             vector = torch.tensor([0.0, 0.0, 1.0], device=self.device)
             normals = quat_to_rotmat(quats_crop / quats_crop.norm(dim=-1, keepdim=True)) @ vector
             normals = normals / normals.norm(dim=-1, keepdim=True)
-            # for visulisation
-            # normals = normals / 2 + 0.5
             normals, alpha = rasterize_gaussians(  # type: ignore
                 self.xys,
                 depths,
@@ -880,6 +889,10 @@ class SplatfactoModel(Model):
                 return_alpha=True,
             )  # type: ignore
 
+            def reweight_loss(loss, alpha=5):
+                weight = 1 / (1 + torch.exp(-alpha * (loss / 2 - 0.5)))
+                return loss * weight.detach()
+            
             viewdirs = means_crop.detach() - camera.camera_to_worlds[..., :3, 3].detach()
             viewdirs = viewdirs / viewdirs.norm(dim=-1, keepdim=True)
             viewdirs, alpha = rasterize_gaussians(  # type: ignore
@@ -898,11 +911,20 @@ class SplatfactoModel(Model):
             )  # type: ignore
             # abs because I don't care about direction
             # here we calculate the dot product of RENDERINGS of normals and viewdirs, othervise it's not meaningful
-            dot_products = torch.abs(torch.sum(normals * viewdirs, dim=-1, keepdim=True))
+            # dot_products = torch.abs(torch.sum(normals * viewdirs, dim=-1, keepdim=True))
+            # replace dot product with cross product
+            dot_products = torch.cross(normals, viewdirs.detach(), dim=-1)
+            dot_products = torch.norm(dot_products, dim=-1, keepdim=True)
+            # divide by max value to normalize
+            # here I want to reweight cross products' norms to penalize 90 degree angles more
+            # dot_products = reweight_loss(dot_products)
             # calculate loss, we care only for normals and viewdirs being parallel to each other
-            normals_loss = torch.mean(-dot_products)
+            # normals_loss = torch.mean(-dot_products)
+            normals_loss = torch.mean(dot_products)
             # for visulisation
-            dot_products = dot_products.expand(-1, -1, 3)
+            dot_products = -dot_products.expand(-1, -1, 3)
+            # for visulisation
+            normals = normals.detach() / 2 + 0.5
 
         # Unique splat ID rendering (doesn't work because of gaussian-shape of each splat)
         # unique_splat_id = torch.arange(means_crop.shape[0],
@@ -999,12 +1021,15 @@ class SplatfactoModel(Model):
                 background=torch.zeros(3, device=self.device),
             )[..., 0:1]  # type: ignore
             depth_im = torch.where(alpha > 0, depth_im / alpha, depth_im.detach().max())
-
+        # # depth distortion loss
+        # if self.config.use_depth_distortion_loss:
+        #     depth_distortion_loss = depth_im alpha
         outputs = {"rgb": rgb, "depth": depth_im, "accumulation": alpha, "background": background,
                    "mask_aabb": self.mask_aabb, "opacities": opacities}
         if self.config.use_normals_regularization:
             outputs["normals_loss"] = normals_loss
             outputs["dot_products"] = dot_products
+            outputs["normals"] = normals
         return outputs
 
     def get_gt_img(self, image: torch.Tensor):
@@ -1044,6 +1069,8 @@ class SplatfactoModel(Model):
         metrics_dict["psnr"] = self.psnr(predicted_rgb, gt_rgb)
 
         metrics_dict["gaussian_count"] = self.num_points
+        metrics_dict["cull_alpha_thresh"] = self.cull_alpha_thresh
+        metrics_dict["normals_regularization_lambda"] = self.normals_regularization_lambda
         return metrics_dict
 
     def get_loss_dict(self, outputs, batch, metrics_dict=None) -> Dict[str, torch.Tensor]:
@@ -1082,7 +1109,7 @@ class SplatfactoModel(Model):
         else:
             scale_reg = torch.tensor(0.0).to(self.device)
         if self.config.use_normals_regularization and self.step % 10 == 0:
-            normals_loss = 0.1 * outputs["normals_loss"]
+            normals_loss = self.normals_regularization_lambda * outputs["normals_loss"]
         else:
             normals_loss = torch.tensor(0.0).to(self.device)
         # L2 regularization on opacities forcing them close to 1.0
